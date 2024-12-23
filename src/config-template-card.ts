@@ -91,9 +91,8 @@ export class ConfigTemplateCard extends LitElement {
       const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
 
       if (oldHass) {
-        for (const entity of this._config.entities) {
-          const evaluatedTemplate = this._evaluateTemplate(entity);
-          if (this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate]) {
+        for (const entity of this._evaluateConfig(deepClone(this._config.entities))) {
+          if (this.hass && oldHass.states[entity] !== this.hass.states[entity]) {
             return true;
           }
         }
