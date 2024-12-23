@@ -4,6 +4,7 @@ import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helper
 
 import { ConfigTemplateConfig } from './types';
 import { CARD_VERSION } from './const';
+import { isString } from './util';
 
 /* eslint no-console: 0 */
 console.info(
@@ -178,7 +179,7 @@ export class ConfigTemplateCard extends LitElement {
           config[key] = this._evaluateArray(value);
         } else if (typeof value === 'object') {
           config[key] = this._evaluateConfig(value);
-        } else if (typeof value === 'string' && value.includes('${')) {
+        } else if (isString(value) && value.includes('${')) {
           config[key] = this._evaluateTemplate(value);
         }
       }
@@ -194,7 +195,7 @@ export class ConfigTemplateCard extends LitElement {
         array[i] = this._evaluateArray(value);
       } else if (typeof value === 'object') {
         array[i] = this._evaluateConfig(value);
-      } else if (typeof value === 'string' && value.includes('${')) {
+      } else if (isString(value) && value.includes('${')) {
         array[i] = this._evaluateTemplate(value);
       }
     }
@@ -233,14 +234,18 @@ export class ConfigTemplateCard extends LitElement {
       }
     }
 
-    for (const v in arrayVars) {
-      const newV = eval(arrayVars[v]);
-      vars.push(newV);
+    for (const idx in arrayVars) {
+      let v = arrayVars[idx];
+      if (isString(v)) { v = eval(varDef + v); }
+      else { v = structuredClone(v); }
+      vars.push(v);
     }
 
     for (const varName in namedVars) {
-      const newV = eval(namedVars[varName]);
-      vars[varName] = newV;
+      let v = namedVars[varName];
+      if (isString(v)) { v = eval(varDef + v); }
+      else { v = structuredClone(v); }
+      vars[varName] = v;
       // create variable definitions to be injected:
       varDef += `var ${varName} = vars['${varName}'];\n`;
     }
