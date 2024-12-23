@@ -220,7 +220,6 @@ export class ConfigTemplateCard extends LitElement {
     const vars: any[] = [];
     const namedVars: { [key: string]: any } = {};
     const arrayVars: string[] = [];
-    let varDef = '';
 
     if (this._config) {
       if (Array.isArray(this._config.variables)) {
@@ -248,18 +247,17 @@ export class ConfigTemplateCard extends LitElement {
     for (const varName in namedVars) {
       const newV = eval(namedVars[varName]);
       vars[varName] = newV;
-      // create variable definitions to be injected:
-      varDef = varDef + `var ${varName} = vars['${varName}'];\n`;
+      eval(`var ${varName} = newV;`);
     }
 
     if (template.startsWith("${") && template.endsWith("}")) {
       // The entire property is a template, return eval's result directly
       // to preserve types other than string (eg. numbers)
-      return eval(varDef + template.substring(2, template.length - 1));
+      return eval(template.substring(2, template.length - 1));
     }
 
     template.match(/\${[^}]+}/g).forEach(m => {
-      const repl = eval(varDef + m.substring(2, m.length - 1));
+      const repl = eval(m.substring(2, m.length - 1));
       template = template.replace(m, repl);
     });
     return template;
