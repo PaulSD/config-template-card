@@ -246,7 +246,7 @@ export class ConfigTemplateCard extends LitElement {
     }
 
     for (const varName in namedVars) {
-      const newV = eval(namedVars[varName]);
+      const newV = eval(varDef + 'eval(namedVars[varName])');
       vars[varName] = newV;
       // create variable definitions to be injected:
       varDef = varDef + `var ${varName} = vars['${varName}'];\n`;
