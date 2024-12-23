@@ -86,7 +86,7 @@ export class ConfigTemplateCard extends LitElement {
       const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
 
       if (oldHass) {
-        for (const entity of this._evaluateConfig(structuredClone(this._config.entities))) {
+        for (const entity of this._evaluateStructure(structuredClone(this._config.entities))) {
           if (this.hass && oldHass.states[entity] !== this.hass.states[entity]) {
             return true;
           }
@@ -120,7 +120,7 @@ export class ConfigTemplateCard extends LitElement {
       return html``;
     }
 
-    let config = this._config.card
+    let configSection = this._config.card
       ? structuredClone(this._config.card)
       : this._config.row
         ? structuredClone(this._config.row)
@@ -128,16 +128,16 @@ export class ConfigTemplateCard extends LitElement {
 
     let style = this._config.style ? structuredClone(this._config.style) : {};
 
-    config = this._evaluateConfig(config);
+    configSection = this._evaluateStructure(configSection);
     if (style) {
-      style = this._evaluateConfig(style);
+      style = this._evaluateStructure(style);
     }
 
     const element = this._config.card
-      ? this._helpers.createCardElement(config)
+      ? this._helpers.createCardElement(configSection)
       : this._config.row
-        ? this._helpers.createRowElement(config)
-        : this._helpers.createHuiElement(config);
+        ? this._helpers.createRowElement(configSection)
+        : this._helpers.createHuiElement(configSection);
     element.hass = this.hass;
 
     if (this._config.element) {
@@ -146,10 +146,10 @@ export class ConfigTemplateCard extends LitElement {
           this.style.setProperty(prop, style[prop]);
         });
       }
-      if (config?.style) {
-        Object.keys(config.style).forEach((prop) => {
-          if (config.style) {  // TypeScript requires a redundant check here, not sure why
-            element.style.setProperty(prop, config.style[prop]);
+      if (configSection?.style) {
+        Object.keys(configSection.style).forEach((prop) => {
+          if (configSection.style) {  // TypeScript requires a redundant check here, not sure why
+            element.style.setProperty(prop, configSection.style[prop]);
           }
         });
       }
@@ -169,45 +169,25 @@ export class ConfigTemplateCard extends LitElement {
     this._helpers = await (window as any).loadCardHelpers();
   }
 
-  private _evaluateConfig(config: any): any {
-    Object.entries(config).forEach((entry) => {
-      const key = entry[0];
-      const value = entry[1];
-
-      if (value !== null) {
-        if (value instanceof Array) {
-          config[key] = this._evaluateArray(value);
-        } else if (typeof value === 'object') {
-          config[key] = this._evaluateConfig(value);
-        } else if (isString(value) && value.includes('${')) {
-          config[key] = this._evaluateTemplate(value);
-        }
+  private _evaluateStructure(struct: any): any {
+    if (struct instanceof Array) {
+      for (let i = 0; i < struct.length; ++i) {
+        const value = struct[i];
+        struct[i] = this._evaluateStructure(value);
       }
-    });
-
-    return config;
+    } else if (typeof struct === 'object') {
+      Object.entries(struct).forEach(entry => {
+        const key = entry[0];
+        const value = entry[1];
+        struct[key] = this._evaluateStructure(value);
+      });
+    } else if (isString(struct) && struct.includes('${')) {
+      return this._evaluateTemplate(struct);
+    }
+    return struct;
   }
 
-  private _evaluateArray(array: any): any {
-    for (let i = 0; i < array.length; ++i) {
-      const value = array[i];
-      if (value instanceof Array) {
-        array[i] = this._evaluateArray(value);
-      } else if (typeof value === 'object') {
-        array[i] = this._evaluateConfig(value);
-      } else if (isString(value) && value.includes('${')) {
-        array[i] = this._evaluateTemplate(value);
-      }
-    }
-
-    return array;
-  }
-
-  private _evaluateTemplate(template: string): string {
-    if (!template.includes('${')) {
-      return template;
-    }
-
+  private _evaluateTemplate(template: string): any {
     /* eslint-disable @typescript-eslint/no-unused-vars */
     const user = this.hass?.user;
     const states = this.hass?.states;
