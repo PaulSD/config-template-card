@@ -1,5 +1,5 @@
-import { LitElement, html, TemplateResult, PropertyValues } from 'lit-element';
-import { customElement, property, state } from 'lit-element/decorators.js';
+import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import deepClone from 'deep-clone-simple';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
@@ -17,7 +17,6 @@ console.info(
 export class ConfigTemplateCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: ConfigTemplateConfig;
-  /* eslint-disable @typescript-eslint/no-explicit-any */
   @state() private _helpers?: any;
   private _initialized = false;
 
@@ -68,7 +67,6 @@ export class ConfigTemplateCard extends LitElement {
   }
 
   private getLovelaceConfig() {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
     const panel = this.getLovelacePanel() as any;
 
     if (panel && panel.lovelace && panel.lovelace.config && panel.lovelace.config.config_template_card_vars) {
@@ -93,7 +91,7 @@ export class ConfigTemplateCard extends LitElement {
       if (oldHass) {
         for (const entity of this._config.entities) {
           const evaluatedTemplate = this._evaluateTemplate(entity);
-          if (Boolean(this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate])) {
+          if (this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate]) {
             return true;
           }
         }
@@ -152,9 +150,11 @@ export class ConfigTemplateCard extends LitElement {
           this.style.setProperty(prop, style[prop]);
         });
       }
-      if (config.style) {
+      if (config?.style) {
         Object.keys(config.style).forEach((prop) => {
-          element.style.setProperty(prop, config.style[prop]);
+          if (config.style) {  // TypeScript requires a redundant check here, not sure why
+            element.style.setProperty(prop, config.style[prop]);
+          }
         });
       }
     }
@@ -170,11 +170,9 @@ export class ConfigTemplateCard extends LitElement {
   }
 
   private async loadCardHelpers(): Promise<void> {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
     this._helpers = await (window as any).loadCardHelpers();
   }
 
-  /* eslint-disable @typescript-eslint/no-explicit-any */
   private _evaluateConfig(config: any): any {
     Object.entries(config).forEach((entry) => {
       const key = entry[0];
@@ -194,7 +192,6 @@ export class ConfigTemplateCard extends LitElement {
     return config;
   }
 
-  /* eslint-disable @typescript-eslint/no-explicit-any */
   private _evaluateArray(array: any): any {
     for (let i = 0; i < array.length; ++i) {
       const value = array[i];

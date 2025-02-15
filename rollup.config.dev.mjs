@@ -21,4 +21,11 @@ export default {
       },
     }),
   ], treeshake: false,
+  moduleContext: {
+    // intl-utils is deprecated but still used by custom-card-helpers.
+    // Until it is removed from custom-card-helpers, silence a Rollup warning related to it:
+    // https://rollupjs.org/troubleshooting/#error-this-is-undefined
+    'node_modules/@formatjs/intl-utils/lib/src/diff.js': 'window',
+    'node_modules/@formatjs/intl-utils/lib/src/resolve-locale.js': 'window',
+  },
 };
