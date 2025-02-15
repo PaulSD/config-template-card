@@ -1,5 +1,5 @@
-import { LitElement, html, TemplateResult, PropertyValues } from 'lit-element';
-import { customElement, property, state } from 'lit-element/decorators.js';
+import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import deepClone from 'deep-clone-simple';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
@@ -93,7 +93,7 @@ export class ConfigTemplateCard extends LitElement {
       if (oldHass) {
         for (const entity of this._config.entities) {
           const evaluatedTemplate = this._evaluateTemplate(entity);
-          if (Boolean(this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate])) {
+          if (this.hass && oldHass.states[evaluatedTemplate] !== this.hass.states[evaluatedTemplate]) {
             return true;
           }
         }
