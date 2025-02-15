@@ -1,6 +1,5 @@
 import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import deepClone from 'deep-clone-simple';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
 import { ConfigTemplateConfig } from './types';
@@ -125,12 +124,12 @@ export class ConfigTemplateCard extends LitElement {
     }
 
     let config = this._config.card
-      ? deepClone(this._config.card)
+      ? structuredClone(this._config.card)
       : this._config.row
-        ? deepClone(this._config.row)
-        : deepClone(this._config.element);
+        ? structuredClone(this._config.row)
+        : structuredClone(this._config.element);
 
-    let style = this._config.style ? deepClone(this._config.style) : {};
+    let style = this._config.style ? structuredClone(this._config.style) : {};
 
     config = this._evaluateConfig(config);
     if (style) {
