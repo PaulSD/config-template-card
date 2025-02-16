@@ -8,7 +8,7 @@ interface StyleMixin {
 
 export interface ConfigTemplateConfig {
   type: string;
-  entities: string[];
+  entities?: string[];
   variables?: Record<string, any> | any[];
   card?: LovelaceCardConfig & StyleMixin;
   row?: EntitiesCardEntityConfig & StyleMixin;

@@ -2,18 +2,24 @@
   "compilerOptions": {
     "target": "es2017",
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "lib": [
       "es2017",
       "dom",
       "dom.iterable"
     ],
-    "noEmit": true,
+
+    "noEmit": false,
     "sourceMap": true,
+    "declaration": false,
+    "declarationMap": false,
+    "tsBuildInfoFile": ".tsbuildinfo",
+
+    "noCheck": false,
+    "strict": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "strict": true,
     "noImplicitAny": false,
     "skipLibCheck": true,
     "resolveJsonModule": true,
