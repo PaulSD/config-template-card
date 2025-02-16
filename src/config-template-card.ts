@@ -53,22 +53,19 @@ export class ConfigTemplateCard extends LitElement {
 
   private getLovelacePanel() {
     const ha = document.querySelector('home-assistant');
-
-    if (ha && ha.shadowRoot) {
+    if (ha?.shadowRoot) {
       const haMain = ha.shadowRoot.querySelector('home-assistant-main');
-
-      if (haMain && haMain.shadowRoot) {
+      if (haMain?.shadowRoot) {
         return haMain.shadowRoot.querySelector('ha-panel-lovelace');
       }
     }
-
     return null;
   }
 
   private getLovelaceConfig() {
     const panel = this.getLovelacePanel() as any;
 
-    if (panel && panel.lovelace && panel.lovelace.config && panel.lovelace.config.config_template_card_vars) {
+    if (panel?.lovelace?.config?.config_template_card_vars) {
       return panel.lovelace.config.config_template_card_vars;
     }
 
@@ -212,14 +209,14 @@ export class ConfigTemplateCard extends LitElement {
     }
 
     /* eslint-disable @typescript-eslint/no-unused-vars */
-    const user = this.hass ? this.hass.user : undefined;
-    const states = this.hass ? this.hass.states : undefined;
+    const user = this.hass?.user;
+    const states = this.hass?.states;
     const vars: any[] = [];
     const namedVars: { [key: string]: any } = {};
     const arrayVars: string[] = [];
     let varDef = '';
 
-    if (this._config) {
+    if (this._config?.variables) {
       if (Array.isArray(this._config.variables)) {
         arrayVars.push(...this._config.variables);
       } else {
@@ -246,7 +243,7 @@ export class ConfigTemplateCard extends LitElement {
       const newV = eval(namedVars[varName]);
       vars[varName] = newV;
       // create variable definitions to be injected:
-      varDef = varDef + `var ${varName} = vars['${varName}'];\n`;
+      varDef += `var ${varName} = vars['${varName}'];\n`;
     }
 
     if (template.startsWith("${") && template.endsWith("}")) {
