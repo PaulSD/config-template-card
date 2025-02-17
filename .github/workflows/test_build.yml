@@ -1,4 +1,4 @@
-name: "Build"
+name: Test Build
 
 on:
   push:
@@ -9,8 +9,8 @@ on:
       - master
 
 jobs:
-  build:
-    name: Build
+  test_build:
+    name: Test Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

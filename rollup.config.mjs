@@ -1,3 +1,4 @@
+import versionInjector from 'rollup-plugin-version-injector';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import eslint from '@rollup/plugin-eslint';
 import typescript from '@rollup/plugin-typescript';
@@ -12,6 +13,18 @@ export default {
     sourcemap: true,
   },
   plugins: [
+    versionInjector({
+      injectInComments: {
+        fileRegexp: /\.js$/,
+        tag: 'Version: {version} - {date}',
+        dateFormat: 'yyyy-mm-dd HH:MM:ss',
+      },
+      injectInTags: {
+        fileRegexp: /\.js$/,
+        tagId: 'VI',
+      },
+      logLevel: 'warn',
+    }),
     nodeResolve(),
     eslint({
       throwOnError: false,
