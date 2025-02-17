@@ -3,12 +3,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
 import { ConfigTemplateConfig, ConfigTemplateVars } from './types';
-import { CARD_VERSION } from './const';
+import { VERSION } from './version';
 import { isString } from './util';
 
-/* eslint no-console: 0 */
 console.info(
-  `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${CARD_VERSION}         `,
+  `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${VERSION}         `,
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray',
 );
@@ -21,7 +20,7 @@ export class ConfigTemplateCard extends LitElement {
   @state() private _helpers?: any;
   private _initialized = false;
 
-  public setConfig(config: ConfigTemplateConfig): void {
+  public setConfig(config?: ConfigTemplateConfig): void {
     if (!config) {
       throw new Error('Invalid configuration');
     }
@@ -50,10 +49,10 @@ export class ConfigTemplateCard extends LitElement {
 
     this._config = config;
 
-    this.loadCardHelpers();
+    void this.loadCardHelpers();
   }
 
-  private getLovelacePanel() {
+  private getLovelacePanel(): any {
     const ha = document.querySelector('home-assistant');
     if (ha?.shadowRoot) {
       const haMain = ha.shadowRoot.querySelector('home-assistant-main');
@@ -64,8 +63,8 @@ export class ConfigTemplateCard extends LitElement {
     return null;
   }
 
-  private getLovelaceConfig() {
-    const panel = this.getLovelacePanel() as any;
+  private getLovelaceConfig(): any {
+    const panel = this.getLovelacePanel();
 
     if (panel?.lovelace?.config?.config_template_card_vars) {
       return panel.lovelace.config.config_template_card_vars;
@@ -102,17 +101,20 @@ export class ConfigTemplateCard extends LitElement {
 
   public getCardSize(): number | Promise<number> {
     if (this.shadowRoot) {
-      const element = this.shadowRoot.querySelector('#card > *') as LovelaceCard;
+      // eslint detects this assertion as unnecessary, but typescript requires it.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      const element = this.shadowRoot.querySelector('#card > *') as LovelaceCard | null;
       if (element) {
-        console.log('computeCardSize is ' + computeCardSize(element));
+        Promise.resolve(computeCardSize(element)).then((size) => {
+          console.log('computeCardSize is ' + size.toString());
+        }, () => undefined);
         return computeCardSize(element);
       }
     }
-
     return 1;
   }
 
-  protected render(): TemplateResult | void {
+  protected render(): TemplateResult {
     if (
       !this._config ||
       !this.hass ||
@@ -135,9 +137,7 @@ export class ConfigTemplateCard extends LitElement {
     if (!this._curVars) { this._evaluateVars(); }
 
     configSection = this._evaluateStructure(configSection);
-    if (style) {
-      style = this._evaluateStructure(style);
-    }
+    style = this._evaluateStructure(style);
 
     // In case the next call to render() is not preceded by a call to shouldUpdate(), force the next
     // render() call to re-evaluate variables.
@@ -151,11 +151,9 @@ export class ConfigTemplateCard extends LitElement {
     element.hass = this.hass;
 
     if (this._config.element) {
-      if (style) {
-        Object.keys(style).forEach((prop) => {
-          this.style.setProperty(prop, style[prop]);
-        });
-      }
+      Object.keys(style).forEach((prop) => {
+        this.style.setProperty(prop, style[prop]);
+      });
       if (configSection?.style) {
         Object.keys(configSection.style).forEach((prop) => {
           if (configSection.style) {  // TypeScript requires a redundant check here, not sure why
@@ -186,6 +184,7 @@ export class ConfigTemplateCard extends LitElement {
         struct[i] = this._evaluateStructure(value);
       }
     } else if (typeof struct === 'object') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       Object.entries(struct).forEach(entry => {
         const key = entry[0];
         const value = entry[1];
@@ -204,8 +203,8 @@ export class ConfigTemplateCard extends LitElement {
       return this._evalWithVars(template.substring(2, template.length - 1));
     }
 
-    template.match(/\${[^}]+}/)?.forEach(m => {
-      const repl = this._evalWithVars(m.substring(2, m.length - 1));
+    /\${[^}]+}/.exec(template)?.forEach(m => {
+      const repl = this._evalWithVars(m.substring(2, m.length - 1)).toString() as string;
       template = template.replace(m, repl);
     });
     return template;
@@ -227,6 +226,7 @@ export class ConfigTemplateCard extends LitElement {
 
     if (this._config?.variables) {
       if (Array.isArray(this._config.variables)) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         arrayVars.push(...this._config.variables);
       } else {
         Object.assign(namedVars, this._config.variables);
@@ -236,14 +236,14 @@ export class ConfigTemplateCard extends LitElement {
     const localVars = this.getLovelaceConfig();
     if (localVars) {
       if (Array.isArray(localVars)) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         arrayVars.push(...localVars);
       } else {
         Object.assign(namedVars, localVars);
       }
     }
 
-    for (const idx in arrayVars) {
-      let v = arrayVars[idx];
+    for (let v of arrayVars) {
       if (isString(v)) { v = this._evalWithVars(v); }
       else { v = structuredClone(v); }
       vars.push(v);

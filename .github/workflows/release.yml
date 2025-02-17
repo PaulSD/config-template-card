@@ -1,27 +1,28 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '*'
 
 jobs:
   release:
-    name: Prepare release
+    name: Prepare Release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Build
         run: |
-          cd /home/runner/work/config-template-card/config-template-card
-          yarn install
+          npm install
           npm run build
 
-      - name: Upload as release
+      - name: Upload as Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: /home/runner/work/config-template-card/config-template-card/dist/config-template-card.js
+          file: dist/config-template-card.js
           asset_name: config-template-card.js
           tag: ${{ github.ref }}
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           overwrite: true

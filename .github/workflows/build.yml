@@ -1,4 +1,4 @@
-name: "Build"
+name: Build
 
 on:
   push:
@@ -14,7 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Build
         run: |
-          yarn install
+          npm install
           npm run build
+
+      - name: Archive distribution bundle
+        uses: actions/upload-artifact@v4
+        with:
+          path: dist/config-template-card.js
+          name: config-template-card-latest-build.js
+          overwrite: true

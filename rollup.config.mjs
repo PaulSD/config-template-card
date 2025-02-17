@@ -1,15 +1,47 @@
-import resolve from '@rollup/plugin-node-resolve';
-import typescript from 'rollup-plugin-typescript2';
+import versionInjector from 'rollup-plugin-version-injector';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
+import eslint from '@rollup/plugin-eslint';
+import typescript from '@rollup/plugin-typescript';
+
+const watch = process.env.ROLLUP_WATCH;
 
 export default {
   input: ['src/config-template-card.ts'],
   output: {
     dir: './dist',
     format: 'es',
+    sourcemap: true,
   },
   plugins: [
-    resolve(),
-    typescript(),
+    versionInjector({
+      packageJson: './.version.json',
+      injectInComments: {
+        fileRegexp: /\.js$/,
+        tag: 'Version: {version} - {date}',
+        dateFormat: 'yyyy-mm-dd HH:MM:ss',
+      },
+      injectInTags: {
+        fileRegexp: /\.js$/,
+        tagId: 'VI',
+      },
+      logLevel: 'warn',
+    }),
+    nodeResolve(),
+    eslint({
+      throwOnError: false,
+    }),
+    typescript({
+      noEmitOnError: true,
+    }),
+    watch && serve({
+      contentBase: './dist',
+      host: '0.0.0.0',
+      port: 5000,
+      allowCrossOrigin: true,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      },
+    }),
   ], treeshake: false,
   moduleContext: {
     // intl-utils is deprecated but still used by custom-card-helpers.
