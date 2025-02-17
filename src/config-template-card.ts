@@ -52,6 +52,17 @@ export class ConfigTemplateCard extends LitElement {
     void this.loadCardHelpers();
   }
 
+  private _initialize(): void {
+    if (this.hass === undefined) return;
+    if (this._config === undefined) return;
+    if (this._helpers === undefined) return;
+    this._initialized = true;
+  }
+
+  private async loadCardHelpers(): Promise<void> {
+    this._helpers = await (window as any).loadCardHelpers();
+  }
+
   private getLovelacePanel(): any {
     const ha = document.querySelector('home-assistant');
     if (ha?.shadowRoot) {
@@ -69,7 +80,6 @@ export class ConfigTemplateCard extends LitElement {
     if (panel?.lovelace?.config?.config_template_card_vars) {
       return panel.lovelace.config.config_template_card_vars;
     }
-
     return {};
   }
 
@@ -166,50 +176,6 @@ export class ConfigTemplateCard extends LitElement {
     return html`<div id="card">${element}</div>`;
   }
 
-  private _initialize(): void {
-    if (this.hass === undefined) return;
-    if (this._config === undefined) return;
-    if (this._helpers === undefined) return;
-    this._initialized = true;
-  }
-
-  private async loadCardHelpers(): Promise<void> {
-    this._helpers = await (window as any).loadCardHelpers();
-  }
-
-  private _evaluateStructure(struct: any): any {
-    if (struct instanceof Array) {
-      for (let i = 0; i < struct.length; ++i) {
-        const value = struct[i];
-        struct[i] = this._evaluateStructure(value);
-      }
-    } else if (typeof struct === 'object') {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      Object.entries(struct).forEach(entry => {
-        const key = entry[0];
-        const value = entry[1];
-        struct[key] = this._evaluateStructure(value);
-      });
-    } else if (isString(struct) && struct.includes('${')) {
-      return this._evaluateTemplate(struct);
-    }
-    return struct;
-  }
-
-  private _evaluateTemplate(template: string): any {
-    if (template.startsWith('${') && template.endsWith('}')) {
-      // The entire property is a template, return eval's result directly
-      // to preserve types other than string (eg. numbers)
-      return this._evalWithVars(template.substring(2, template.length - 1));
-    }
-
-    /\${[^}]+}/.exec(template)?.forEach(m => {
-      const repl = this._evalWithVars(m.substring(2, m.length - 1)).toString() as string;
-      template = template.replace(m, repl);
-    });
-    return template;
-  }
-
   private _evaluateVars(): void {
     const vars: Record<string, any> & any[] = [];
     const namedVars: Record<string, any> = {};
@@ -256,6 +222,39 @@ export class ConfigTemplateCard extends LitElement {
       vars[varName] = v;
       cv._evalInit += `var ${varName} = vars['${varName}'];\n`;
     }
+  }
+
+  private _evaluateStructure(struct: any): any {
+    if (struct instanceof Array) {
+      for (let i = 0; i < struct.length; ++i) {
+        const value = struct[i];
+        struct[i] = this._evaluateStructure(value);
+      }
+    } else if (typeof struct === 'object') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      Object.entries(struct).forEach(entry => {
+        const key = entry[0];
+        const value = entry[1];
+        struct[key] = this._evaluateStructure(value);
+      });
+    } else if (isString(struct) && struct.includes('${')) {
+      return this._evaluateTemplate(struct);
+    }
+    return struct;
+  }
+
+  private _evaluateTemplate(template: string): any {
+    if (template.startsWith('${') && template.endsWith('}')) {
+      // The entire property is a template, return eval's result directly
+      // to preserve types other than string (eg. numbers)
+      return this._evalWithVars(template.substring(2, template.length - 1));
+    }
+
+    /\${[^}]+}/.exec(template)?.forEach(m => {
+      const repl = this._evalWithVars(m.substring(2, m.length - 1)).toString() as string;
+      template = template.replace(m, repl);
+    });
+    return template;
   }
 
   private _evalWithVars(template: string): any {
