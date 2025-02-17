@@ -3,11 +3,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
 import { ConfigTemplateConfig, ConfigTemplateVars } from './types';
-import { CARD_VERSION } from './const';
+import { VERSION } from './version';
 import { isString } from './util';
 
 console.info(
-  `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${CARD_VERSION}         `,
+  `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${VERSION}         `,
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray',
 );
