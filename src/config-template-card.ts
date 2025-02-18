@@ -264,7 +264,7 @@ export class ConfigTemplateCard extends LitElement {
       return this._evalWithVars(template.substring(2, template.length - 1));
     }
 
-    const matches = /\${[^}]+}/.exec(template);
+    const matches = template.match(/\${[^}]+}/g);
     if (matches) {
       matches.forEach(m => {
         const repl = this._evalWithVars(m.substring(2, m.length - 1), '<error>').toString() as string;
