@@ -158,7 +158,7 @@ variables:
       # {{ states('sensor.time') }}
 ```
 
-## Defining global functions in variables
+### Defining global functions in variables
 
 If you find yourself having to rewrite the same logic in multiple locations, you can define global methods inside Config Template Card's variables, which can be called anywhere within the scope of the card:
 
@@ -185,7 +185,7 @@ type: 'custom:config-template-card'
         name: '${ setTempMessage("House: ", currentTemp) }'
 ````
 
-## Dashboard wide variables
+### Dashboard wide variables
 
 If you need to use the same variable in multiple cards, then instead of defining it in each card's `variables` you can do that once for the entire dashboard.
 
@@ -202,7 +202,13 @@ Both arrays and objects are supported, just like in card's local variables. It i
 
 ### Note: All templates must be enclosed by `${}`, except when defining variables.
 
-[Troubleshooting](https://github.com/thomasloven/hass-config/wiki/Lovelace-Plugins)
+`${}` is optional in variable definitions (variables will be parsed as templates even without `${}`).
+
+Values that begin with `$!` will not be parsed for templates.  `$!` will be stripped from the beginning of the value, but any `${}` sequences within the value will be left as-is.
+
+## Troubleshooting
+
+[General HA Plugin Troubleshooting](https://github.com/thomasloven/hass-config/wiki/Lovelace-Plugins)
 
 ## Developers
 
