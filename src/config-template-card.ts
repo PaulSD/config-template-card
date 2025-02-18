@@ -2,7 +2,7 @@ import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
-import { ConfigTemplateConfig, ConfigTemplateVars } from './types';
+import { ConfigTemplateConfig, ConfigTemplateVarMgr } from './types';
 import { VERSION } from './version';
 import { isString } from './util';
 
@@ -16,7 +16,7 @@ console.info(
 export class ConfigTemplateCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: ConfigTemplateConfig;
-  private _curVars?: ConfigTemplateVars;
+  private _varMgr: ConfigTemplateVarMgr = {};
   @state() private _helpers?: any;
   private _initialized = false;
 
@@ -52,13 +52,6 @@ export class ConfigTemplateCard extends LitElement {
     void this.loadCardHelpers();
   }
 
-  private _initialize(): void {
-    if (this.hass === undefined) return;
-    if (this._config === undefined) return;
-    if (this._helpers === undefined) return;
-    this._initialized = true;
-  }
-
   private async loadCardHelpers(): Promise<void> {
     this._helpers = await (window as any).loadCardHelpers();
   }
@@ -83,32 +76,6 @@ export class ConfigTemplateCard extends LitElement {
     return {};
   }
 
-  protected shouldUpdate(changedProps: PropertyValues): boolean {
-    if (!this._initialized) {
-      this._initialize();
-    }
-
-    if (changedProps.has('_config')) {
-      return true;
-    }
-
-    if (this._config) {
-      const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
-
-      if (oldHass) {
-        this._evaluateVars();
-        for (const entity of this._evaluateStructure(structuredClone(this._config.entities))) {
-          if (this.hass && oldHass.states[entity] !== this.hass.states[entity]) {
-            return true;
-          }
-        }
-        return false;
-      }
-    }
-
-    return true;
-  }
-
   public getCardSize(): number | Promise<number> {
     if (this.shadowRoot) {
       // eslint detects this assertion as unnecessary, but typescript requires it.
@@ -124,15 +91,43 @@ export class ConfigTemplateCard extends LitElement {
     return 1;
   }
 
+  private _initialize(): boolean {
+    if (!this.hass || !this._config || !this._helpers) { return false; }
+    this._initialized = true;
+    return true;
+  }
+
+  protected shouldUpdate(changedProps: PropertyValues): boolean {
+    if (!this._initialized && !this._initialize()) {
+      return true;
+    }
+    // TypeScript doesn't detect the check in _initialize()
+    if (!this._config) { return true; }
+
+    if (changedProps.has('_config')) {
+      return true;
+    }
+
+    const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
+    if (oldHass) {
+      this._evaluateVars();
+      for (const entity of this._evaluateStructure(structuredClone(this._config.entities))) {
+        if (this.hass && oldHass.states[entity] !== this.hass.states[entity]) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   protected render(): TemplateResult {
-    if (
-      !this._config ||
-      !this.hass ||
-      !this._helpers ||
-      (!this._config.card && !this._config.row && !this._config.element)
-    ) {
+    if (!this._initialized && !this._initialize()) {
       return html``;
     }
+    // TypeScript doesn't detect the check in _initialize()
+    if (!this._config) { return html``; }
 
     let configSection = this._config.card
       ? structuredClone(this._config.card)
@@ -144,14 +139,14 @@ export class ConfigTemplateCard extends LitElement {
 
     // render() is usually called shortly after shouldUpdate(), in which case we probably don't need
     // to re-evaluate variables.
-    if (!this._curVars) { this._evaluateVars(); }
+    if (!this._varMgr.vars) { this._evaluateVars(); }
 
     configSection = this._evaluateStructure(configSection);
     style = this._evaluateStructure(style);
 
     // In case the next call to render() is not preceded by a call to shouldUpdate(), force the next
     // render() call to re-evaluate variables.
-    this._curVars = undefined;
+    this._varMgr.vars = undefined;
 
     const element = this._config.card
       ? this._helpers.createCardElement(configSection)
@@ -181,14 +176,11 @@ export class ConfigTemplateCard extends LitElement {
     const namedVars: Record<string, any> = {};
     const arrayVars: any[] = [];
 
-    const cv = this._curVars = {
+    Object.assign(this._varMgr, {
       hass: this.hass, states: this.hass?.states, user: this.hass?.user, vars: vars,
-      _evalInit: '',
-    }
-    cv._evalInit += "var hass = this._curVars.hass;\n";
-    cv._evalInit += "var states = this._curVars.states;\n";
-    cv._evalInit += "var user = this._curVars.user;\n";
-    cv._evalInit += "var vars = this._curVars.vars;\n";
+    });
+    // TypeScript can't detect this if it is set in Object.assign()
+    this._varMgr._evalInitVars = '';
 
     if (this._config?.variables) {
       if (Array.isArray(this._config.variables)) {
@@ -220,7 +212,7 @@ export class ConfigTemplateCard extends LitElement {
       if (isString(v)) { v = this._evalWithVars(v); }
       else { v = structuredClone(v); }
       vars[varName] = v;
-      cv._evalInit += `var ${varName} = vars['${varName}'];\n`;
+      this._varMgr._evalInitVars += `var ${varName} = vars['${varName}'];\n`;
     }
   }
 
@@ -251,28 +243,60 @@ export class ConfigTemplateCard extends LitElement {
     }
 
     /\${[^}]+}/.exec(template)?.forEach(m => {
-      const repl = this._evalWithVars(m.substring(2, m.length - 1)).toString() as string;
+      const repl = this._evalWithVars(m.substring(2, m.length - 1), '<error>').toString() as string;
       template = template.replace(m, repl);
     });
     return template;
   }
 
-  private _evalWithVars(template: string): any {
-    // Be aware that `this.hass` must be available to evaluated templates for backward compatibility
-    // with old config-template-card configs.
+  private _evalInitBase = (
+    "'use strict'; undefined;\n" +
+    'var hass = globalThis._varMgr.hass;\n' +
+    'var states = globalThis._varMgr.states;\n' +
+    'var user = globalThis._varMgr.user;\n' +
+    'var vars = globalThis._varMgr.vars;\n' +
+  '');
 
-    const init = (this._curVars?._evalInit ? this._curVars._evalInit : '');
+  private _evalWithVars(template: string, exceptRet: any = null): any {
+    // "direct" eval() is considered insecure and generates warnings, so use "indirect" eval().
+    //
+    // "indirect" eval() sets `this` to `globalThis`/`window`, and does not support changing `this`
+    // except by calling a function or class within the eval() (which would break the implicit
+    // return semantics that we rely on for most use cases).
+    //
+    // Variables can only be passed between this code and "indirect" eval() code via the global
+    // scope (`globalThis`).
+    //
+    // For backward compatibility, `this.hass` must be available to evaluated templates.
+    //
+    // "indirect" eval() runs in non-strict mode by default, which causes new local variables to be
+    // added to `this` and pollute the global scope.  Explicitly switching to strict mode within the
+    // eval() disables adding local variables to `this` and avoids polluting the global scope.
+    //
+    // In addition to switching to strict mode, the `'use strict';` statement also sets the implicit
+    // return value to 'use strict', which isn't what we want if the template is empty.  Therefore
+    // we explicitly follow it with `undefined;` to reset the implicit return value.
 
-    // "direct" eval() is considered insecure and generates warnings, so use "indirect" eval(),
-    // which uses global scope as local scope (this === window, so this.hass should work).
-    const tsWindow: any = window;  // Silence typescript errors about setting variables on window
-    const origCurVars = tsWindow._curVars;  // Just in case there is a conflicting global variable
-    tsWindow._curVars = this._curVars;
-    const indirectEval = eval;
+    // In case there are conflicting global variables
+    const origVarMgr = globalThis._varMgr;
+    const origHass = globalThis.hass;
 
-    const ret = indirectEval(init + template);
+    try {
+      globalThis._varMgr = this._varMgr;
+      globalThis.hass = this.hass;
+      const initBase = this._evalInitBase;
+      const initVars = (this._varMgr._evalInitVars ?? '');
+      const indirectEval = eval;
 
-    if (origCurVars) { tsWindow._curVars = origCurVars; } else { delete tsWindow._curVars; }
-    return ret;
+      const ret = indirectEval(initBase + initVars + template);
+
+      return ret;
+    } catch(e) {
+      console.error('Template error:', e);
+      return exceptRet;
+    } finally {
+      if (origVarMgr) { globalThis._varMgr = origVarMgr; } else { delete globalThis._varMgr; }
+      if (origHass) { globalThis.hass = origHass; } else { delete globalThis.hass; }
+    }
   }
 }
