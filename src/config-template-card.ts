@@ -203,7 +203,7 @@ export class ConfigTemplateCard extends LitElement {
 
     arrayVars = structuredClone(arrayVars);
     for (let v of arrayVars) {
-      if (isString(v) && !v.includes('${')) { v = this._evalWithVars(v); }
+      if (isString(v)) { v = this._evaluateTemplate(v, true); }
       else { v = this._evaluateStructure(v); }
       vars.push(v);
     }
@@ -211,7 +211,7 @@ export class ConfigTemplateCard extends LitElement {
     namedVars = structuredClone(namedVars);
     for (const varName in namedVars) {
       let v = namedVars[varName];
-      if (isString(v) && !v.includes('${')) { v = this._evalWithVars(v); }
+      if (isString(v)) { v = this._evaluateTemplate(v, true); }
       else { v = this._evaluateStructure(v); }
       vars[varName] = v;
       this._varMgr._evalInitVars += `var ${varName} = vars['${varName}'];\n`;
@@ -231,23 +231,36 @@ export class ConfigTemplateCard extends LitElement {
         const value = entry[1];
         struct[key] = this._evaluateStructure(value);
       });
-    } else if (isString(struct) && struct.includes('${')) {
+    } else if (isString(struct)) {
       return this._evaluateTemplate(struct);
     }
     return struct;
   }
 
-  private _evaluateTemplate(template: string): any {
+  private _evaluateTemplate(template: string, withoutDelim = false): any {
+    if (template.startsWith('$! ')) {
+      return template.substring(3, template.length);
+    }
+
     if (template.startsWith('${') && template.endsWith('}')) {
       // The entire property is a template, return eval's result directly
       // to preserve types other than string (eg. numbers)
       return this._evalWithVars(template.substring(2, template.length - 1));
     }
 
-    /\${[^}]+}/.exec(template)?.forEach(m => {
-      const repl = this._evalWithVars(m.substring(2, m.length - 1), '<error>').toString() as string;
-      template = template.replace(m, repl);
-    });
+    const matches = /\${[^}]+}/.exec(template);
+    if (matches) {
+      matches.forEach(m => {
+        const repl = this._evalWithVars(m.substring(2, m.length - 1), '<error>').toString() as string;
+        template = template.replace(m, repl);
+      });
+      return template;
+    }
+
+    if (withoutDelim) {
+      return this._evalWithVars(template);
+    }
+
     return template;
   }
 
