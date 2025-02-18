@@ -173,8 +173,8 @@ export class ConfigTemplateCard extends LitElement {
 
   private _evaluateVars(): void {
     const vars: Record<string, any> & any[] = [];
-    const namedVars: Record<string, any> = {};
-    const arrayVars: any[] = [];
+    let namedVars: Record<string, any> = {};
+    let arrayVars: any[] = [];
 
     Object.assign(this._varMgr, {
       hass: this.hass, states: this.hass?.states, user: this.hass?.user, vars: vars,
@@ -201,16 +201,18 @@ export class ConfigTemplateCard extends LitElement {
       }
     }
 
+    arrayVars = structuredClone(arrayVars);
     for (let v of arrayVars) {
-      if (isString(v)) { v = this._evalWithVars(v); }
-      else { v = structuredClone(v); }
+      if (isString(v) && !v.includes('${')) { v = this._evalWithVars(v); }
+      else { v = this._evaluateStructure(v); }
       vars.push(v);
     }
 
+    namedVars = structuredClone(namedVars);
     for (const varName in namedVars) {
       let v = namedVars[varName];
-      if (isString(v)) { v = this._evalWithVars(v); }
-      else { v = structuredClone(v); }
+      if (isString(v) && !v.includes('${')) { v = this._evalWithVars(v); }
+      else { v = this._evaluateStructure(v); }
       vars[varName] = v;
       this._varMgr._evalInitVars += `var ${varName} = vars['${varName}'];\n`;
     }
