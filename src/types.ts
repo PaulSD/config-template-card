@@ -16,10 +16,11 @@ export interface ConfigTemplateConfig {
   style?: Record<string, string>;
 }
 
-export interface ConfigTemplateVars {
+export interface ConfigTemplateVarMgr {
   hass?: HomeAssistant;
   states?: HassEntities;
   user?: CurrentUser;
-  vars: Record<string, any> & any[];
-  _evalInit: string;
+  _evalInitBase?: string;
+  vars?: Record<string, any> & any[];
+  _evalInitVars?: string;
 }
