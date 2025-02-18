@@ -182,16 +182,17 @@ export class ConfigTemplateCard extends LitElement {
     // TypeScript can't detect this if it is set in Object.assign()
     this._varMgr._evalInitVars = '';
 
-    if (this._config?.variables) {
-      if (Array.isArray(this._config.variables)) {
+    const globalVars = this.getLovelaceConfig();
+    if (globalVars) {
+      if (Array.isArray(globalVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        arrayVars.push(...this._config.variables);
+        arrayVars.push(...globalVars);
       } else {
-        Object.assign(namedVars, this._config.variables);
+        Object.assign(namedVars, globalVars);
       }
     }
 
-    const localVars = this.getLovelaceConfig();
+    const localVars = this._config?.variables;
     if (localVars) {
       if (Array.isArray(localVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
