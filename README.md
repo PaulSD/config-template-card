@@ -39,24 +39,27 @@ resources:
 
 ## Options
 
-| Name      | Type   | Requirement  | Description                                                                                                      |
-| --------- | ------ | ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| type      | string | **Required** | `custom:config-template-card`                                                                                    |
-| entities  | list   | **Required** | List of entity strings that should be watched for updates. Templates can be used here                            |
-| variables | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `vars` or by name |
-| card      | object | **Optional** | Card configuration. (A card, row, or element configuaration must be provided)                                    |
-| row       | object | **Optional** | Row configuration. (A card, row, or element configuaration must be provided)                                     |
-| element   | object | **Optional** | Element configuration. (A card, row, or element configuaration must be provided)                                 |
-| style     | object | **Optional** | Style configuration.                                                                                             |
+| Name            | Type   | Requirement  | Description                                            |
+| --------------- | ------ | ------------ | ------------------------------------------------------ |
+| type            | string | **Required** | `custom:config-template-card`                                                                                    |
+| entities        | list   | **Required** | List of entity strings that should be watched for updates. Templates can be used here                            |
+| variables       | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `vars` or by name. These are evaluated on each update/render. |
+| staticVariables | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `svars` or by name. These are evaluated only on the first update/render and are preserved without re-evaluation for subsequent updates. |
+| card            | object | **Optional** | Card configuration. (A card, row, or element configuration must be provided)                                    |
+| row             | object | **Optional** | Row configuration. (A card, row, or element configuration must be provided)                                     |
+| element         | object | **Optional** | Element configuration. (A card, row, or element configuration must be provided)                                 |
+| style           | object | **Optional** | Style configuration.                                                                                             |
 
 ### Available variables for templating
 
-| Variable    | Description                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Variable    | Description                                                                        |
+| ----------- | ---------------------------------------------------------------------------------- |
 | `hass`      | The [hass](https://developers.home-assistant.io/docs/frontend/data/) object                                                                                                                                                                                                                                                                                                                           |
 | `states`    | The [states](https://developers.home-assistant.io/docs/frontend/data/#hassstates) object                                                                                                                                                                                                                                                                                                              |
 | `user`      | The [user](https://developers.home-assistant.io/docs/frontend/data/#hassuser) object                                                                                                                                                                                                                                                                                                                  |
 | `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting at the 0th index as your firstly defined variable. If `variables` is an object in the configuration, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
+| `svars`     | Defined by `staticVariables` configuration and accessible in your templates to avoid redundant expensive operations. If `staticVariables` in the configuration is a yaml list, then `svars` is an array starting at the 0th index as your firstly defined variable. If `staticVariables` is an object in the configuration, then `svars` is a string-indexed map and you can also access the variables by name without using `svars` at all. |
+
 ## Examples
 
 ```yaml
@@ -194,6 +197,8 @@ title: My dashboard
 
 config_template_card_vars:
   - states['sensor.light'].state
+config_template_card_staticVars:
+  lang: document.documentElement.lang
 
 views:
 ```

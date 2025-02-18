@@ -2,7 +2,7 @@ import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
-import { ConfigTemplateConfig, ConfigTemplateVarMgr } from './types';
+import { Config as ConfigType, VarMgr as VarMgrType, Vars as VarsType } from './types';
 import { VERSION } from './version';
 import { isString } from './util';
 
@@ -15,12 +15,12 @@ console.info(
 @customElement('config-template-card')
 export class ConfigTemplateCard extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
-  @state() private _config?: ConfigTemplateConfig;
-  private _varMgr: ConfigTemplateVarMgr = {};
+  @state() private _config?: ConfigType;
+  private _varMgr: VarMgrType = {};
   @state() private _helpers?: any;
   private _initialized = false;
 
-  public setConfig(config?: ConfigTemplateConfig): void {
+  public setConfig(config?: ConfigType): void {
     if (!config) {
       throw new Error('Invalid configuration');
     }
@@ -69,11 +69,10 @@ export class ConfigTemplateCard extends LitElement {
 
   private getLovelaceConfig(): any {
     const panel = this.getLovelacePanel();
-
-    if (panel?.lovelace?.config?.config_template_card_vars) {
-      return panel.lovelace.config.config_template_card_vars;
-    }
-    return {};
+    return {
+      vars: panel?.lovelace?.config?.config_template_card_vars,
+      svars: panel?.lovelace?.config?.config_template_card_staticVars,
+    };
   }
 
   public getCardSize(): number | Promise<number> {
@@ -171,18 +170,33 @@ export class ConfigTemplateCard extends LitElement {
     return html`<div id="card">${element}</div>`;
   }
 
-  private _evaluateVars(): void {
-    const vars: Record<string, any> & any[] = [];
+  private _evaluateVars(doStatic = false, globalConfig: any = undefined): void {
+    const vars: VarsType = [];
     let namedVars: Record<string, any> = {};
     let arrayVars: any[] = [];
+    let init = '', initRef: string;
 
-    Object.assign(this._varMgr, {
-      hass: this.hass, states: this.hass?.states, user: this.hass?.user, vars: vars,
-    });
-    // TypeScript can't detect this if it is set in Object.assign()
-    this._varMgr._evalInitVars = '';
+    let globalVars: VarsType | undefined;
+    let localVars: VarsType | undefined;
+    if (!globalConfig) { globalConfig = this.getLovelaceConfig(); }
+    if (!doStatic) {
+      Object.assign(this._varMgr, {
+        hass: this.hass, states: this.hass?.states, user: this.hass?.user, vars: vars,
+      });
+      if (!this._varMgr.svars) {
+        this._evaluateVars(true, globalConfig);
+      }
+      globalVars = globalConfig.vars;
+      localVars = this._config?.variables;
+      initRef = 'vars';
+    } else {
+      // This assumes that _evaluateVars(true) is only called by _evaluateVars(false), so we can
+      // assume that _varMgr is already initialized.
+      globalVars = globalConfig.svars;
+      localVars = this._config?.staticVariables;
+      initRef = 'svars';
+    }
 
-    const globalVars = this.getLovelaceConfig();
     if (globalVars) {
       if (Array.isArray(globalVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -192,7 +206,6 @@ export class ConfigTemplateCard extends LitElement {
       }
     }
 
-    const localVars = this._config?.variables;
     if (localVars) {
       if (Array.isArray(localVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -215,7 +228,9 @@ export class ConfigTemplateCard extends LitElement {
       if (isString(v)) { v = this._evaluateTemplate(v, true); }
       else { v = this._evaluateStructure(v); }
       vars[varName] = v;
-      this._varMgr._evalInitVars += `var ${varName} = vars['${varName}'];\n`;
+      init += `var ${varName} = ${initRef}['${varName}'];\n`;
+      if (!doStatic) { this._varMgr._evalInitVars = init; }
+      else { this._varMgr._evalInitSVars = init; }
     }
   }
 
@@ -270,6 +285,7 @@ export class ConfigTemplateCard extends LitElement {
     'var hass = globalThis._varMgr.hass;\n' +
     'var states = globalThis._varMgr.states;\n' +
     'var user = globalThis._varMgr.user;\n' +
+    'var svars = globalThis._varMgr.svars;\n' +
     'var vars = globalThis._varMgr.vars;\n' +
   '');
 
@@ -301,10 +317,11 @@ export class ConfigTemplateCard extends LitElement {
       globalThis._varMgr = this._varMgr;
       globalThis.hass = this.hass;
       const initBase = this._evalInitBase;
+      const initSVars = (this._varMgr._evalInitSVars ?? '');
       const initVars = (this._varMgr._evalInitVars ?? '');
       const indirectEval = eval;
 
-      const ret = indirectEval(initBase + initVars + template);
+      const ret = indirectEval(initBase + initSVars + initVars + template);
 
       return ret;
     } catch(e) {
