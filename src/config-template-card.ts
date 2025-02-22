@@ -1,10 +1,11 @@
 import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { until } from 'lit/directives/until.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
 import { Config, SVarMgr, VarMgr, Vars, ObjMap } from './types';
 import { VERSION } from './version';
-import { assertNotNull, isString } from './util';
+import { assertNotNull, isString, isPromise, somePromise } from './util';
 
 console.info(
   `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${VERSION}         `,
@@ -130,9 +131,19 @@ export class ConfigTemplateCard extends LitElement {
     // _initSVars() requires hass and _config
     if (!this.hass || !this._config) { return false; }
 
-    // shouldUpdate() requires _svarMgr
+    // shouldUpdate() requires _svarMgr to be settled
     if (!this._svarMgr) {
       this._svarMgr = this._evaluateVars(true);
+      if (this._svarMgr._svarsPromise) {
+        void this._svarMgr._svarsPromise.then((v) => {
+          // Explicitly trigger an update after svars has settled
+          this.requestUpdate();
+          return v;
+        });
+        return false;
+      }
+    } else {
+      if (this._svarMgr._svarsPromise) { return false; }
     }
 
     // render() requires hass, _config, and _helpers
@@ -155,8 +166,12 @@ export class ConfigTemplateCard extends LitElement {
       const varMgr = this._evaluateVars(false);
       // Cache the evaluated variables to avoid requiring render() to evaluate them again
       this._tmpVarMgr = varMgr;
-      const entities = this._evaluateStructure(varMgr, this._config.entities);
+      const entities = this._evaluateStructure(varMgr, this._config.entities, 'immediate');
       for (const entity of entities) {
+        if (isPromise(entity)) {
+          console.warn("Ignoring asynchronous function in 'entities'. Asynchronous functions are not permitted in config-template-card 'entities'.");
+          continue;
+        }
         if (!isString(entity)) {
           console.warn("Ignoring non-string value in 'entities'. Only string values are permitted in config-template-card 'entities'.");
           continue;
@@ -179,10 +194,16 @@ export class ConfigTemplateCard extends LitElement {
     this._tmpVarMgr = undefined;
     if (!varMgr) { varMgr = this._evaluateVars(false); }  // Shouldn't happen
 
+    return html`${until(this._getElement(varMgr))}`;
+  }
+
+  private async _getElement(varMgr: VarMgr): Promise<TemplateResult> {
     assertNotNull(this._config);  // TypeScript can't detect the gate in _initialize()
 
+    if (varMgr._varsPromise) { await varMgr._varsPromise; }
+
     let configSection = (this._config.card ?? this._config.row ?? this._config.element);
-    configSection = this._evaluateStructure(varMgr, configSection);
+    configSection = await this._evaluateStructure(varMgr, configSection);
 
     const element = this._config.card
       ? this._helpers.createCardElement(configSection)
@@ -194,7 +215,7 @@ export class ConfigTemplateCard extends LitElement {
     if (this._config.element) {
       if (this._config.style) {
         let style = this._config.style;
-        style = this._evaluateStructure(varMgr, style);
+        style = await this._evaluateStructure(varMgr, style);
         Object.keys(style).forEach((prop) => {
           this.style.setProperty(prop, style[prop]);
         });
@@ -250,28 +271,34 @@ export class ConfigTemplateCard extends LitElement {
       svars: this._svarMgr?.svars ?? [], _evalInitSVars: this._svarMgr?._evalInitSVars ?? '',
       vars: [], _evalInitVars: '',
     };
-    const vars: Vars = (doStatic ? varMgr.svars : varMgr.vars);
+    const immediateVars: Vars = (doStatic ? varMgr.svars : varMgr.vars);
     const initKey = (doStatic ? '_evalInitSVars' : '_evalInitVars');
     const initRef = (doStatic ? 'svars' : 'vars');
 
+    const arrayVars2: any[] = [];
     for (let v of arrayVars) {
       if (isString(v)) {
         v = this._evaluateTemplate(varMgr, v, true);
-        vars.push(v);
+        immediateVars.push(v);
+        arrayVars2.push(v);
       } else {
-        v = this._evaluateStructure(varMgr, v);
-        vars.push(v);
+        v = this._evaluateStructure(varMgr, v, 'both');
+        immediateVars.push(v.immediate);
+        arrayVars2.push(v.promise);
       }
     }
+    const namedVars2: ObjMap = {};
     for (const varName in namedVars) {
       let v = namedVars[varName];
       if (isString(v)) {
         v = this._evaluateTemplate(varMgr, v, true);
-        vars[varName] = v;
+        immediateVars[varName] = v;
+        namedVars2[varName] = v;
       }
       else {
-        v = this._evaluateStructure(varMgr, v);
-        vars[varName] = v;
+        v = this._evaluateStructure(varMgr, v, 'both');
+        immediateVars[varName] = v.immediate;
+        namedVars2[varName] = v.promise;
       }
       // Note that if `staticVariables` and `variables` both contain a variable with the same name
       // then `_evalInitSVars + _evalInitVars` will end up defining the variable twice.  This
@@ -281,35 +308,99 @@ export class ConfigTemplateCard extends LitElement {
       varMgr[initKey] += `var ${varName} = ${initRef}['${varName}'];\n`;
     }
 
+    let promiseArrayVars: Promise<any[]> | undefined;
+    if (somePromise(arrayVars2)) {
+      promiseArrayVars = Promise.all(arrayVars2.map((v) => Promise.resolve(v)));
+    }
+    let promiseNamedVars: Promise<ObjMap> | undefined;
+    if (somePromise(Object.entries(namedVars2).map(([_k, v], _i) => v))) {
+      promiseNamedVars = Promise.all(Object.entries(namedVars2).map(([k, v], _i) =>
+        Promise.resolve(v).then((v) => [k, v])
+      )).then((a) => Object.fromEntries(a));
+    }
+    let promise: Promise<any> | undefined;
+    if (isPromise(promiseArrayVars) || isPromise(promiseNamedVars)) {
+      promise = Promise.all([promiseArrayVars, promiseNamedVars].map((v) => Promise.resolve(v)))
+      .then(([pav, pnv]) => Object.assign(pav as any[], pnv as ObjMap));
+    }
+
     if (doStatic) {
       const svarMgr: SVarMgr = {
-        svars: vars, _evalInitSVars: varMgr._evalInitSVars,
+        svars: immediateVars, _evalInitSVars: varMgr._evalInitSVars,
       };
+      if (promise) {
+        svarMgr._svarsPromise = promise.then((v) => {
+          svarMgr.svars = v;
+          svarMgr._svarsPromise = undefined;
+          return v;
+        });
+      }
       return svarMgr;
     } else {
+      if (promise) {
+        varMgr._varsPromise = promise.then((v) => {
+          varMgr.vars = v;
+          varMgr._varsPromise = undefined;
+          return v;
+        });
+      }
       return varMgr;
     }
   }
 
-  private _evaluateStructure(varMgr: VarMgr, struct: any): any {
+  // Return value is based on `mode`:
+  // * 'promise' will return either a Promise (that will settle when all Promises returned by
+  //   templates have settled), or a non-Promise (if no nested templates return a Promise).
+  // * 'immediate' will return a non-Promise, potentially with nested Promise values.
+  // * 'both' will return both of the above as `{ promise: p, immediate: i }`.
+  private _evaluateStructure(varMgr: VarMgr, struct: any, mode = 'promise'): any {
     let ret;
 
     if (struct instanceof Array) {
       ret = struct.map((v, _i) =>
-        this._evaluateStructure(varMgr, v)
+        this._evaluateStructure(varMgr, v, mode)
       );
+      if (mode != 'immediate') {
+        let promiseTmp: any[], immediate: any[] = [], promise: any[] | Promise<any[]>;
+        if (mode == 'both') { immediate = ret.map((v) => v.immediate); }
+        promise = promiseTmp = (mode == 'both' ? ret.map((v) => v.promise) : ret);
+        if (somePromise(promiseTmp)) {
+          promise = Promise.all(promiseTmp.map((v) => Promise.resolve(v)));
+        }
+        ret = (mode == 'both' ? { promise: promise, immediate: immediate } : promise);
+      }
 
     } else if (typeof struct === 'object') {
       const tmp = Object.entries(struct as ObjMap).map(([k, v], _i) =>
-        [k, this._evaluateStructure(varMgr, v)]
+        [k, this._evaluateStructure(varMgr, v, mode)]
       );
-      ret = Object.fromEntries(tmp);
+      let immediateTmp: any[], promiseTmp: any[];
+      let immediate: ObjMap = {}, promise: ObjMap | Promise<ObjMap> = {};
+      if (mode != 'promise') {
+        immediateTmp = (mode == 'both' ? tmp.map(([k, v], _i) => [k, v.immediate]) : tmp);
+        immediate = Object.fromEntries(immediateTmp);
+        ret = immediate;
+      }
+      if (mode != 'immediate') {
+        promiseTmp = (mode == 'both' ? tmp.map(([k, v], _i) => [k, v.promise]) : tmp);
+        if (somePromise(promiseTmp.map(([_k, v], _i) => v))) {
+          promise = Promise.all(promiseTmp.map(([k, v], _i) =>
+            Promise.resolve(v).then((v) => [k, v])
+          )).then((a) => Object.fromEntries(a));
+        } else {
+          promise = Object.fromEntries(promiseTmp);
+        }
+        ret = promise;
+      }
+      if (mode == 'both') { ret = { promise: promise, immediate: immediate }; }
 
     } else if (isString(struct)) {
       ret = this._evaluateTemplate(varMgr, struct);
+      if (mode == 'both') { ret = { promise: ret, immediate: ret }; }
 
     } else {
       ret = structuredClone(struct);
+      if (mode == 'both') { ret = { promise: ret, immediate: ret }; };
     }
 
     return ret;
@@ -331,8 +422,18 @@ export class ConfigTemplateCard extends LitElement {
       const repls = matches.map((m, _i) => {
         return [m, this._evalWithVars(varMgr, m.substring(2, m.length - 1), '<error>')]
       });
-      repls.forEach(([m, r]) => template = template.replace(m as string, String(r)));
-      return template;
+      if (somePromise(repls.map(([_m, r], _i) => r))) {
+        return Promise.all(repls.map(([m, p]) =>
+          Promise.resolve(p).then((r) => [m, r])
+        )).then((a) => {
+          let t = template;
+          a.forEach(([m, r]) => t = t.replace(m as string, String(r)));
+          return t;
+        });
+      } else {
+        repls.forEach(([m, r]) => template = template.replace(m as string, String(r)));
+        return template;
+      }
     }
 
     if (withoutDelim) {
@@ -385,6 +486,12 @@ export class ConfigTemplateCard extends LitElement {
 
       const ret = indirectEval(initBase + initSVars + initVars + template);
 
+      if (isPromise(ret)) {
+        return ret.catch((e: unknown) => {
+          console.error('Template error:', e);
+          return exceptRet;
+        });
+      }
       return ret;
     } catch(e) {
       console.error('Template error:', e);
