@@ -23,6 +23,7 @@ export interface Config {
 export interface SVarMgr {
   svars: Vars;
   _evalInitSVars: string;
+  _svarsPromise?: Promise<any>;
 }
 
 export interface VarMgr {
@@ -33,4 +34,5 @@ export interface VarMgr {
   _evalInitSVars: string;
   vars: Vars;
   _evalInitVars: string;
+  _varsPromise?: Promise<any>;
 }
