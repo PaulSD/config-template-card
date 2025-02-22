@@ -127,11 +127,12 @@ elements:
       type: icon
       icon: "${vars[0] === 'on' ? 'mdi:home' : 'mdi:circle'}"
       style:
-        '--paper-item-icon-color': '${ states[''sensor.light_icon_color''].state }'
+        '--paper-item-icon-color': "${ states['sensor.light_icon_color'].state }"
     style:
       top: 47%
       left: 75%
 ```
+
 The `style` object on the element configuration is applied to the element itself, the `style` object on the `config-template-card` is applied to the surrounding card. Both can contain templated values. For example, in order to place the card properly, the `top` and `left` attributes must always be configured on the `config-template-card`.
 
 ### Entities card example
@@ -198,7 +199,35 @@ card:
   entities:
     - entity: climate.ecobee
       name: '${ setTempMessage("House: ", currentTemp) }'
-````
+```
+
+### Asynchronous functions
+
+Asynchronous functions can be used in most templates.
+
+```yaml
+type: 'custom:config-template-card'
+entities:
+  - light.bed_light
+  - light.porch_light
+card:
+  type: entities
+  entities:
+    - entity: light.bed_light
+      name: "${(async () => states['light.bed_light'].state === 'on' ? 'Bed Light On' : 'Bed Light Off' )();}"
+    - entity: light.porch_light
+      name: "${(async () => { return states['light.bed_light'].state === 'on' ? 'Porch Light On' : 'Porch Light Off'; })();}"
+```
+
+Card rendering will be delayed until all asynchronous functions (in all templates) have completed, so long-running asynchronous functions may prevent the card from rendering on page load or delay updates to the card.
+
+When defining `staticVariables` that reference other (previously defined) `svars`, any referenced `svars` that use asynchronous functions will contain the unsettled `Promise` object.
+
+Similarly, when defining `variables` that reference other (previously defined) `vars`, any referenced `vars` that use asynchronous functions will contain the unsettled `Promise` object. However, any referenced `svars` that use asynchronous functions will contain complete/settled values.
+
+When defining `entities` that use templates, any `entities` templates that use asynchronous functions will be skipped, and any referenced `vars` that use asynchronous functions will contain the unsettled `Promise` object, which will not settle before `entities` is used. However, any referenced `svars` that use asynchronous functions will have complete/settled values.
+
+(The reason that asynchronous functions cannot be used for `entities` is that Lit does not support asynchronous functions in `shouldUpdate()` where `entities` is evaluated and used.  The alternative [lovelace-card-templater](https://github.com/gadgetchnnel/lovelace-card-templater) cannot support templates in its `entities` for the same reason; it uses API calls to render templates, and API calls require the use of asynchronous functions.)
 
 ### Dashboard wide variables
 
