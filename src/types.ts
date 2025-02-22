@@ -2,7 +2,8 @@ import { LovelaceCardConfig, EntitiesCardEntityConfig, LovelaceElementConfigBase
 import { HomeAssistant, CurrentUser } from 'custom-card-helpers';
 import { HassEntities } from 'home-assistant-js-websocket';
 
-export type Vars = Record<string, any> | any[];
+export type ObjMap = Record<string, any>;
+export type Vars = ObjMap | any[];
 
 interface StyleMixin {
   style?: Record<string, string>;
@@ -19,12 +20,17 @@ export interface Config {
   style?: Record<string, string>;
 }
 
+export interface SVarMgr {
+  svars: Vars;
+  _evalInitSVars: string;
+}
+
 export interface VarMgr {
-  hass?: HomeAssistant;
-  states?: HassEntities;
-  user?: CurrentUser;
-  vars?: Vars;
-  _evalInitVars?: string;
-  svars?: Vars;
-  _evalInitSVars?: string;
+  hass: HomeAssistant;
+  states: HassEntities;
+  user: CurrentUser;
+  svars: Vars;
+  _evalInitSVars: string;
+  vars: Vars;
+  _evalInitVars: string;
 }

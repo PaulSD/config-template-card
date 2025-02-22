@@ -2,9 +2,9 @@ import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
-import { Config as ConfigType, VarMgr as VarMgrType, Vars as VarsType } from './types';
+import { Config, SVarMgr, VarMgr, Vars, ObjMap } from './types';
 import { VERSION } from './version';
-import { isString } from './util';
+import { assertNotNull, isString } from './util';
 
 console.info(
   `%c  CONFIG-TEMPLATE-CARD  \n%c  Version ${VERSION}         `,
@@ -14,42 +14,78 @@ console.info(
 
 @customElement('config-template-card')
 export class ConfigTemplateCard extends LitElement {
-  @property({ attribute: false }) public hass?: HomeAssistant;
-  @state() private _config?: ConfigType;
-  private _varMgr: VarMgrType = {};
-  @state() private _helpers?: any;
-  private _initialized = false;
 
-  public setConfig(config?: ConfigType): void {
+  // External interactions:
+  //
+  // Lit updates are triggered by changing any "property" or "state" variables, or by explicitly
+  // calling `this.requestUpdate()`.
+  //
+  // After a Lit update has been triggered, Lit will call `shouldUpdate(changedProps)`, and if that
+  // returns `true` then Lit will call `render()`.
+  // When performing async Lit rendering using `until()`, Lit should not begin a new update until
+  // the prior async update has completed.  However, this code is designed to be able to handle
+  // parallel updates anyway.
+  //
+  // When HA state changes, HA will set `hass`.
+  // When HA config changes, HA will call `setConfig(config)`.
+  // When the global (dashboard wide) 'config_template_card_*' config changes, nothing happens;
+  // Users should reload their browser after changing the global config.
+  //
+  // After construction, the following will be triggered in an unspecified order:
+  // * Lit will trigger an update
+  // * HA will call `setConfig(config)` (which will trigger another update)
+  // * HA will set `hass` (which will trigger another update)
+  //
+  // It is not clear whether the global config is available at construction time, and it is only
+  // used here in combination with the local config, so we don't retrieve it until `setConfig()` is
+  // called.
+
+  @property({ attribute: false }) public hass?: HomeAssistant;
+  @state() private _config?: Config;
+  @state() private _helpers?: any;
+
+  private _globalConfig: { svars: any, vars: any } = { svars: undefined, vars: undefined };
+  private _svarMgr?: SVarMgr;
+  private _initialized = false;
+  private _tmpVarMgr?: VarMgr;
+
+  public constructor() {
+    super();
+    void this.loadCardHelpers();
+  }
+
+  public setConfig(config?: Config): void {
     if (!config) {
       throw new Error('Invalid configuration');
     }
-
     if (!config.card && !config.row && !config.element) {
       throw new Error('No card or row or element defined');
     }
-
+    if ([config.card, config.row, config.element].filter(v => v).length > 1) {
+      throw new Error('Only one of card/row/element can be defined');
+    }
     if (config.card && !config.card.type) {
       throw new Error('No card type defined');
     }
-
     if (config.card && config.card.type === 'picture-elements') {
       console.warn(
         'WARNING: config-template-card should not be used with the picture-elements card itself. Instead use it as one of the elements. Check the README for details',
       );
     }
-
     if (config.element && !config.element.type) {
       throw new Error('No element type defined');
     }
-
-    if (!config.entities) {
-      throw new Error('No entities defined');
+    if (!config.element && config.style) {
+      throw new Error('style can only be used with element');
     }
-
     this._config = config;
 
-    void this.loadCardHelpers();
+    this._globalConfig = this.getLovelaceConfig();
+
+    // Force re-evaluation of staticVariables
+    this._svarMgr = undefined;
+    this._initialized = false;
+    this._initialize();
   }
 
   private async loadCardHelpers(): Promise<void> {
@@ -70,19 +106,19 @@ export class ConfigTemplateCard extends LitElement {
   private getLovelaceConfig(): any {
     const panel = this.getLovelacePanel();
     return {
-      vars: panel?.lovelace?.config?.config_template_card_vars,
       svars: panel?.lovelace?.config?.config_template_card_staticVars,
+      vars: panel?.lovelace?.config?.config_template_card_vars,
     };
   }
 
   public getCardSize(): number | Promise<number> {
     if (this.shadowRoot) {
-      // eslint detects this assertion as unnecessary, but typescript requires it.
+      // eslint improperly parses this assertion, but typescript handles it properly
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
       const element = this.shadowRoot.querySelector('#card > *') as LovelaceCard | null;
       if (element) {
         Promise.resolve(computeCardSize(element)).then((size) => {
-          console.log('computeCardSize is ' + size.toString());
+          console.log('computeCardSize is ' + String(size));
         }, () => undefined);
         return computeCardSize(element);
       }
@@ -91,61 +127,62 @@ export class ConfigTemplateCard extends LitElement {
   }
 
   private _initialize(): boolean {
-    if (!this.hass || !this._config || !this._helpers) { return false; }
+    // _initSVars() requires hass and _config
+    if (!this.hass || !this._config) { return false; }
+
+    // shouldUpdate() requires _svarMgr
+    if (!this._svarMgr) {
+      this._svarMgr = this._evaluateVars(true);
+    }
+
+    // render() requires hass, _config, and _helpers
+    if (!this._helpers) { return false; }
+
     this._initialized = true;
     return true;
   }
 
   protected shouldUpdate(changedProps: PropertyValues): boolean {
-    if (!this._initialized && !this._initialize()) {
-      return true;
-    }
-    // TypeScript doesn't detect the check in _initialize()
-    if (!this._config) { return true; }
+    if (!this._initialized) { return this._initialize(); }
+    assertNotNull(this._config);  // TypeScript can't detect the gate in _initialize()
+    assertNotNull(this.hass);  // TypeScript can't detect the gate in _initialize()
 
-    if (changedProps.has('_config')) {
-      return true;
-    }
+    if (changedProps.has('_config')) { return true; }
 
     const oldHass = changedProps.get('hass') as HomeAssistant | undefined;
     if (oldHass) {
-      this._evaluateVars();
-      for (const entity of this._evaluateStructure(structuredClone(this._config.entities))) {
-        if (this.hass && oldHass.states[entity] !== this.hass.states[entity]) {
+      if (!this._config.entities) { return false; }
+      const varMgr = this._evaluateVars(false);
+      // Cache the evaluated variables to avoid requiring render() to evaluate them again
+      this._tmpVarMgr = varMgr;
+      const entities = this._evaluateStructure(varMgr, this._config.entities);
+      for (const entity of entities) {
+        if (!isString(entity)) {
+          console.warn("Ignoring non-string value in 'entities'. Only string values are permitted in config-template-card 'entities'.");
+          continue;
+        }
+        if (oldHass.states[entity] !== this.hass.states[entity]) {
           return true;
         }
       }
       return false;
     }
 
+    // If anything else changed then re-render
     return true;
   }
 
   protected render(): TemplateResult {
-    if (!this._initialized && !this._initialize()) {
-      return html``;
-    }
-    // TypeScript doesn't detect the check in _initialize()
-    if (!this._config) { return html``; }
+    if (!this._initialized) { return html``; }  // Shouldn't happen
 
-    let configSection = this._config.card
-      ? structuredClone(this._config.card)
-      : this._config.row
-        ? structuredClone(this._config.row)
-        : structuredClone(this._config.element);
+    let varMgr = this._tmpVarMgr;
+    this._tmpVarMgr = undefined;
+    if (!varMgr) { varMgr = this._evaluateVars(false); }  // Shouldn't happen
 
-    let style = this._config.style ? structuredClone(this._config.style) : {};
+    assertNotNull(this._config);  // TypeScript can't detect the gate in _initialize()
 
-    // render() is usually called shortly after shouldUpdate(), in which case we probably don't need
-    // to re-evaluate variables.
-    if (!this._varMgr.vars) { this._evaluateVars(); }
-
-    configSection = this._evaluateStructure(configSection);
-    style = this._evaluateStructure(style);
-
-    // In case the next call to render() is not preceded by a call to shouldUpdate(), force the next
-    // render() call to re-evaluate variables.
-    this._varMgr.vars = undefined;
+    let configSection = (this._config.card ?? this._config.row ?? this._config.element);
+    configSection = this._evaluateStructure(varMgr, configSection);
 
     const element = this._config.card
       ? this._helpers.createCardElement(configSection)
@@ -155,14 +192,17 @@ export class ConfigTemplateCard extends LitElement {
     element.hass = this.hass;
 
     if (this._config.element) {
-      Object.keys(style).forEach((prop) => {
-        this.style.setProperty(prop, style[prop]);
-      });
+      if (this._config.style) {
+        let style = this._config.style;
+        style = this._evaluateStructure(varMgr, style);
+        Object.keys(style).forEach((prop) => {
+          this.style.setProperty(prop, style[prop]);
+        });
+      }
       if (configSection?.style) {
         Object.keys(configSection.style).forEach((prop) => {
-          if (configSection.style) {  // TypeScript requires a redundant check here, not sure why
-            element.style.setProperty(prop, configSection.style[prop]);
-          }
+          assertNotNull(configSection.style);  // TypeScript can't detect the enclosing if()
+          element.style.setProperty(prop, configSection.style[prop]);
         });
       }
     }
@@ -170,33 +210,24 @@ export class ConfigTemplateCard extends LitElement {
     return html`<div id="card">${element}</div>`;
   }
 
-  private _evaluateVars(doStatic = false, globalConfig: any = undefined): void {
-    const vars: VarsType = [];
-    let namedVars: Record<string, any> = {};
-    let arrayVars: any[] = [];
-    let init = '', initRef: string;
+  private _evaluateVars(doStatic: false): VarMgr;
+  private _evaluateVars(doStatic: true): SVarMgr;
+  private _evaluateVars(doStatic) {
+    assertNotNull(this.hass);  // TypeScript can't detect the gate in _initialize()
+    assertNotNull(this._config);  // TypeScript can't detect the gate in _initialize()
 
-    let globalVars: VarsType | undefined;
-    let localVars: VarsType | undefined;
-    if (!globalConfig) { globalConfig = this.getLovelaceConfig(); }
-    if (!doStatic) {
-      Object.assign(this._varMgr, {
-        hass: this.hass, states: this.hass?.states, user: this.hass?.user, vars: vars,
-      });
-      if (!this._varMgr.svars) {
-        this._evaluateVars(true, globalConfig);
-      }
-      globalVars = globalConfig.vars;
-      localVars = this._config?.variables;
-      initRef = 'vars';
+    let globalVars: Vars | undefined;
+    let localVars: Vars | undefined;
+    if (doStatic) {
+      globalVars = this._globalConfig.svars;
+      localVars = this._config.staticVariables;
     } else {
-      // This assumes that _evaluateVars(true) is only called by _evaluateVars(false), so we can
-      // assume that _varMgr is already initialized.
-      globalVars = globalConfig.svars;
-      localVars = this._config?.staticVariables;
-      initRef = 'svars';
+      globalVars = this._globalConfig.vars;
+      localVars = this._config.variables;
     }
 
+    const arrayVars: any[] = [];
+    const namedVars: ObjMap = {};
     if (globalVars) {
       if (Array.isArray(globalVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -205,7 +236,6 @@ export class ConfigTemplateCard extends LitElement {
         Object.assign(namedVars, globalVars);
       }
     }
-
     if (localVars) {
       if (Array.isArray(localVars)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -215,45 +245,77 @@ export class ConfigTemplateCard extends LitElement {
       }
     }
 
-    arrayVars = structuredClone(arrayVars);
-    for (let v of arrayVars) {
-      if (isString(v)) { v = this._evaluateTemplate(v, true); }
-      else { v = this._evaluateStructure(v); }
-      vars.push(v);
-    }
+    const varMgr: VarMgr = {
+      hass: this.hass, states: this.hass.states, user: this.hass.user,
+      svars: this._svarMgr?.svars ?? [], _evalInitSVars: this._svarMgr?._evalInitSVars ?? '',
+      vars: [], _evalInitVars: '',
+    };
+    const vars: Vars = (doStatic ? varMgr.svars : varMgr.vars);
+    const initKey = (doStatic ? '_evalInitSVars' : '_evalInitVars');
+    const initRef = (doStatic ? 'svars' : 'vars');
 
-    namedVars = structuredClone(namedVars);
+    for (let v of arrayVars) {
+      if (isString(v)) {
+        v = this._evaluateTemplate(varMgr, v, true);
+        vars.push(v);
+      } else {
+        v = this._evaluateStructure(varMgr, v);
+        vars.push(v);
+      }
+    }
     for (const varName in namedVars) {
       let v = namedVars[varName];
-      if (isString(v)) { v = this._evaluateTemplate(v, true); }
-      else { v = this._evaluateStructure(v); }
-      vars[varName] = v;
-      init += `var ${varName} = ${initRef}['${varName}'];\n`;
-      if (!doStatic) { this._varMgr._evalInitVars = init; }
-      else { this._varMgr._evalInitSVars = init; }
-    }
-  }
-
-  private _evaluateStructure(struct: any): any {
-    if (struct instanceof Array) {
-      for (let i = 0; i < struct.length; ++i) {
-        const value = struct[i];
-        struct[i] = this._evaluateStructure(value);
+      if (isString(v)) {
+        v = this._evaluateTemplate(varMgr, v, true);
+        vars[varName] = v;
       }
-    } else if (typeof struct === 'object') {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      Object.entries(struct).forEach(entry => {
-        const key = entry[0];
-        const value = entry[1];
-        struct[key] = this._evaluateStructure(value);
-      });
-    } else if (isString(struct)) {
-      return this._evaluateTemplate(struct);
+      else {
+        v = this._evaluateStructure(varMgr, v);
+        vars[varName] = v;
+      }
+      // Note that if `staticVariables` and `variables` both contain a variable with the same name
+      // then `_evalInitSVars + _evalInitVars` will end up defining the variable twice.  This
+      // shouldn't be a problem, since the second definition will simply override the first.
+      // However, if browsers/JavaScript are changed so that re-defining a variable causes a warning
+      // or error then we may need to explicitly remove duplicates from `_evalInitSVars`.
+      varMgr[initKey] += `var ${varName} = ${initRef}['${varName}'];\n`;
     }
-    return struct;
+
+    if (doStatic) {
+      const svarMgr: SVarMgr = {
+        svars: vars, _evalInitSVars: varMgr._evalInitSVars,
+      };
+      return svarMgr;
+    } else {
+      return varMgr;
+    }
   }
 
-  private _evaluateTemplate(template: string, withoutDelim = false): any {
+  private _evaluateStructure(varMgr: VarMgr, struct: any): any {
+    let ret;
+
+    if (struct instanceof Array) {
+      ret = struct.map((v, _i) =>
+        this._evaluateStructure(varMgr, v)
+      );
+
+    } else if (typeof struct === 'object') {
+      const tmp = Object.entries(struct as ObjMap).map(([k, v], _i) =>
+        [k, this._evaluateStructure(varMgr, v)]
+      );
+      ret = Object.fromEntries(tmp);
+
+    } else if (isString(struct)) {
+      ret = this._evaluateTemplate(varMgr, struct);
+
+    } else {
+      ret = structuredClone(struct);
+    }
+
+    return ret;
+  }
+
+  private _evaluateTemplate(varMgr: VarMgr, template: string, withoutDelim = false): any {
     if (template.startsWith('$! ')) {
       return template.substring(3, template.length);
     }
@@ -261,20 +323,20 @@ export class ConfigTemplateCard extends LitElement {
     if (template.startsWith('${') && template.endsWith('}')) {
       // The entire property is a template, return eval's result directly
       // to preserve types other than string (eg. numbers)
-      return this._evalWithVars(template.substring(2, template.length - 1));
+      return this._evalWithVars(varMgr, template.substring(2, template.length - 1));
     }
 
     const matches = template.match(/\${[^}]+}/g);
     if (matches) {
-      matches.forEach(m => {
-        const repl = this._evalWithVars(m.substring(2, m.length - 1), '<error>').toString() as string;
-        template = template.replace(m, repl);
+      const repls = matches.map((m, _i) => {
+        return [m, this._evalWithVars(varMgr, m.substring(2, m.length - 1), '<error>')]
       });
+      repls.forEach(([m, r]) => template = template.replace(m as string, String(r)));
       return template;
     }
 
     if (withoutDelim) {
-      return this._evalWithVars(template);
+      return this._evalWithVars(varMgr, template);
     }
 
     return template;
@@ -289,7 +351,7 @@ export class ConfigTemplateCard extends LitElement {
     'var vars = globalThis._varMgr.vars;\n' +
   '');
 
-  private _evalWithVars(template: string, exceptRet: any = null): any {
+  private _evalWithVars(varMgr: VarMgr, template: string, exceptRet: any = null): any {
     // "direct" eval() is considered insecure and generates warnings, so use "indirect" eval().
     //
     // "indirect" eval() sets `this` to `globalThis`/`window`, and does not support changing `this`
@@ -314,11 +376,11 @@ export class ConfigTemplateCard extends LitElement {
     const origHass = globalThis.hass;
 
     try {
-      globalThis._varMgr = this._varMgr;
+      globalThis._varMgr = varMgr;
       globalThis.hass = this.hass;
       const initBase = this._evalInitBase;
-      const initSVars = (this._varMgr._evalInitSVars ?? '');
-      const initVars = (this._varMgr._evalInitVars ?? '');
+      const initSVars = varMgr._evalInitSVars;
+      const initVars = varMgr._evalInitVars;
       const indirectEval = eval;
 
       const ret = indirectEval(initBase + initSVars + initVars + template);

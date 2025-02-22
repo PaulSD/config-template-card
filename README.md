@@ -1,6 +1,6 @@
-# Config Template Card Card
+# Config Template Card
 
-📝 Templatable Configuration Card
+📝 Template Based Configuration for Lovelace Dashboard Cards
 
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]](LICENSE.md)
@@ -15,13 +15,23 @@
 [![Twitter][twitter]][twitter]
 [![Github][github]][github]
 
-This card is for [Lovelace](https://www.home-assistant.io/lovelace) on [Home Assistant](https://www.home-assistant.io/) that allows you to use pretty much any valid Javascript on the hass object in your configuration
+## Overview
 
-## Minimum Home Assistant Version
+This [Home Assistant](https://www.home-assistant.io/) [Lovelace Dashboard](https://www.home-assistant.io/dashboards) Card supports the use of Javascript templates to dynamically configure other nested Dashboard Cards.
 
-Home Assistant version 0.110.0 or higher is required as of release 1.2.0 of config-template-card
+### Template Language
 
-## Support
+Note that this Card uses **Javascript** templates. It does NOT support the **Jinja2** templates that are used elsewhere in Home Assistant.
+
+This is because Dashboard Cards are normally rendered entirely in the web browser using Javascript, while Jinja2 templates must be rendered by Python on the Home Assistant server. The use of Javascript for templates enables this Card to render templates in the browser without deviating from the expected design pattern of Dashboard Cards.
+
+For an alternative Card that does support Jinja2 templates, see [lovelace-card-templater](https://github.com/gadgetchnnel/lovelace-card-templater). That Card works by making API calls from the browser to the Home Assistant server to render each template.
+
+### Minimum Home Assistant Version
+
+Home Assistant version 0.110.0 or higher is required as of release 1.2.0 of config-template-card.
+
+### Support
 
 Hey dude! Help me out for a couple of :beers: or a :coffee:!
 
@@ -37,28 +47,30 @@ resources:
     type: module
 ```
 
-## Options
+## Configuration
 
-| Name            | Type   | Requirement  | Description                                            |
-| --------------- | ------ | ------------ | ------------------------------------------------------ |
-| type            | string | **Required** | `custom:config-template-card`                                                                                    |
-| entities        | list   | **Required** | List of entity strings that should be watched for updates. Templates can be used here                            |
-| variables       | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `vars` or by name. These are evaluated on each update/render. |
-| staticVariables | list   | **Optional** | List of variables, which can be templates, that can be used in your `config` and indexed using `svars` or by name. These are evaluated only on the first update/render and are preserved without re-evaluation for subsequent updates. |
-| card            | object | **Optional** | Card configuration. (A card, row, or element configuration must be provided)                                    |
-| row             | object | **Optional** | Row configuration. (A card, row, or element configuration must be provided)                                     |
-| element         | object | **Optional** | Element configuration. (A card, row, or element configuration must be provided)                                 |
-| style           | object | **Optional** | Style configuration.                                                                                             |
+| Name            | Type        | Requirement  | Description                                       |
+| --------------- | ----------- | ------------ | ------------------------------------------------- |
+| type            | string      | **Required** | Must be `custom:config-template-card`             |
+| entities        | list        | **Optional** | List of entity strings that should be watched for updates. Templates can be used here. |
+| staticVariables | list/object | **Optional** | List of variables, which can be templates, that can be used in other templates and indexed using `svars` or by name. These are evaluated only on the first update/render and are preserved without re-evaluation for subsequent updates. |
+| variables       | list/object | **Optional** | List of variables, which can be templates, that can be used in other templates and indexed using `vars` or by name. These are evaluated on each update/render. |
+| card            | object      | **Optional** | Card configuration.                               |
+| row             | object      | **Optional** | Row configuration.                                |
+| element         | object      | **Optional** | Element configuration.                            |
+| style           | object      | **Optional** | Element Style configuration. Can only be used with `element`.    |
+
+Exactly one of `card`, `row`, or `element` is required.
 
 ### Available variables for templating
 
 | Variable    | Description                                                                        |
 | ----------- | ---------------------------------------------------------------------------------- |
-| `hass`      | The [hass](https://developers.home-assistant.io/docs/frontend/data/) object                                                                                                                                                                                                                                                                                                                           |
-| `states`    | The [states](https://developers.home-assistant.io/docs/frontend/data/#hassstates) object                                                                                                                                                                                                                                                                                                              |
-| `user`      | The [user](https://developers.home-assistant.io/docs/frontend/data/#hassuser) object                                                                                                                                                                                                                                                                                                                  |
-| `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting at the 0th index as your firstly defined variable. If `variables` is an object in the configuration, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
-| `svars`     | Defined by `staticVariables` configuration and accessible in your templates to avoid redundant expensive operations. If `staticVariables` in the configuration is a yaml list, then `svars` is an array starting at the 0th index as your firstly defined variable. If `staticVariables` is an object in the configuration, then `svars` is a string-indexed map and you can also access the variables by name without using `svars` at all. |
+| `hass`      | The [hass](https://developers.home-assistant.io/docs/frontend/data/) object.       |
+| `states`    | The [states](https://developers.home-assistant.io/docs/frontend/data/#hassstates) object. |
+| `user`      | The [user](https://developers.home-assistant.io/docs/frontend/data/#hassuser) object. |
+| `svars`     | Defined by `staticVariables` configuration and accessible in your templates to avoid redundant expensive operations. If `staticVariables` in the configuration is a yaml list, then `svars` is an array starting with index 0. If `staticVariables` in the configuration is an object, then `svars` is a string-indexed map and you can also access the variables by name without using `svars` at all. |
+| `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting with index 0. If `variables` in the configuration is an object, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
 
 ## Examples
 
@@ -120,7 +132,7 @@ elements:
       top: 47%
       left: 75%
 ```
-The `style` object on the element configuration is applied to the element itself, the `style` object on the `config-template-card` is applied to the surrounding card, both can contain templated values. For example, in order to place the card properly, the `top` and `left` attributes must always be configured on the `config-template-card`.
+The `style` object on the element configuration is applied to the element itself, the `style` object on the `config-template-card` is applied to the surrounding card. Both can contain templated values. For example, in order to place the card properly, the `top` and `left` attributes must always be configured on the `config-template-card`.
 
 ### Entities card example
 
@@ -161,31 +173,31 @@ variables:
       # {{ states('sensor.time') }}
 ```
 
-### Defining global functions in variables
+### Defining functions in variables
 
-If you find yourself having to rewrite the same logic in multiple locations, you can define global methods inside Config Template Card's variables, which can be called anywhere within the scope of the card:
+If you find yourself having to rewrite the same logic in multiple locations, you can define methods inside Config Template Card's variables, which can be called anywhere within the scope of the card:
 
 ```yaml
 type: 'custom:config-template-card'
-  variables:
-    setTempMessage: |
-      (prefix, temp) => {
-        if (temp <= 19) {
-            return prefix + 'Quick, get a blanket!';
-        }
-        else if (temp >= 20 && temp <= 22) {
-          return prefix + 'Cozy!';
-        }
-        return prefix + 'It's getting hot in here...';
+variables:
+  setTempMessage: |
+    (prefix, temp) => {
+      if (temp <= 19) {
+          return prefix + 'Quick, get a blanket!';
       }
-    currentTemp: states['climate.ecobee'].attributes.current_temperature
+      else if (temp >= 20 && temp <= 22) {
+        return prefix + 'Cozy!';
+      }
+      return prefix + 'It's getting hot in here...';
+    }
+  currentTemp: states['climate.ecobee'].attributes.current_temperature
+entities:
+  - climate.ecobee
+card:
+  type: entities
   entities:
-    - climate.ecobee
-  card:
-    type: entities
-    entities:
-      - entity: climate.ecobee
-        name: '${ setTempMessage("House: ", currentTemp) }'
+    - entity: climate.ecobee
+      name: '${ setTempMessage("House: ", currentTemp) }'
 ````
 
 ### Dashboard wide variables
@@ -195,15 +207,17 @@ If you need to use the same variable in multiple cards, then instead of defining
 ```yaml
 title: My dashboard
 
-config_template_card_vars:
-  - states['sensor.light'].state
 config_template_card_staticVars:
   lang: document.documentElement.lang
+config_template_card_vars:
+  - states['sensor.light'].state
 
 views:
 ```
 
-Both arrays and objects are supported, just like in card's local variables. It is allowed to mix the two types, i.e. use an array in dashboard variables and an object in card variables, or the other way around. If both definitions are arrays, then dashboard variables are put first in `vars`. In the mixed mode, `vars` have array indices and as well as variable names.
+Both arrays and objects are supported, just like in card's local variables. It is allowed to mix the two types, i.e. use an array in dashboard variables and an object in card variables, or the other way around. If both definitions are arrays, then dashboard variables are put first in `svars`/`vars`. In the mixed mode, `svars`/`vars` have array indices as well as variable names.
+
+After making changes to these variable definitions in the HA Dashboard Editor, you must reload the browser on any currently-open clients before you will see the changes.  Unlike card config changes which automatically update currently-open clients, dashboard wide variable config changes will not automatically update currently-open clients.
 
 ### Note: All templates must be enclosed by `${}`, except when defining variables.
 
@@ -224,6 +238,7 @@ Values that begin with `$! ` (`$!` followed by a space) will not be parsed for t
 Fork and then clone the repo to your local machine. From the cloned directory run
 
 `npm install && npm run build`
+
 
 [commits-shield]: https://img.shields.io/github/commit-activity/y/custom-cards/config-template-card.svg?style=for-the-badge
 [commits]: https://github.com/custom-cards/config-template-card/commits/master
