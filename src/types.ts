@@ -5,18 +5,14 @@ import { HassEntities } from 'home-assistant-js-websocket';
 export type ObjMap = Record<string, any>;
 export type Vars = ObjMap | any[];
 
-interface StyleMixin {
-  style?: Record<string, string>;
-}
-
 export interface Config {
   type: string;
   entities?: string[];
   variables?: Vars;
   staticVariables?: Vars;
-  card?: LovelaceCardConfig & StyleMixin;
-  row?: EntitiesCardEntityConfig & StyleMixin;
-  element?: LovelaceElementConfigBase & StyleMixin;
+  card?: LovelaceCardConfig;
+  row?: EntitiesCardEntityConfig;
+  element?: LovelaceElementConfigBase;
   style?: Record<string, string>;
 }
 
@@ -30,9 +26,11 @@ export interface VarMgr {
   hass: HomeAssistant;
   states: HassEntities;
   user: CurrentUser;
+  config: Config;
   svars: Vars;
   _evalInitSVars: string;
-  vars: Vars;
+  vars?: Vars;
   _evalInitVars: string;
   _varsPromise?: Promise<any>;
+  output?: ObjMap;
 }
