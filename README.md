@@ -69,8 +69,10 @@ Exactly one of `card`, `row`, or `element` is required.
 | `hass`      | The [hass](https://developers.home-assistant.io/docs/frontend/data/) object.       |
 | `states`    | The [states](https://developers.home-assistant.io/docs/frontend/data/#hassstates) object. |
 | `user`      | The [user](https://developers.home-assistant.io/docs/frontend/data/#hassuser) object. |
+| `config`    | The configuration provided to config-template-card. This is read-only, includes the unevaluated templates, and does not include any dashboard-wide `config_template_card_staticVars` or `config_template_card_vars` values. |
 | `svars`     | Defined by `staticVariables` configuration and accessible in your templates to avoid redundant expensive operations. If `staticVariables` in the configuration is a yaml list, then `svars` is an array starting with index 0. If `staticVariables` in the configuration is an object, then `svars` is a string-indexed map and you can also access the variables by name without using `svars` at all. |
 | `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting with index 0. If `variables` in the configuration is an object, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
+| `output`    | While evaluating the `card`, `row`, or `element` configuration, `output` contains the partially assembled/evaluated copy of that config section. This may be used, for example, to reference a nested card's `type` or `entities` in a template for that card's `name` without requiring the referenced values to be defined in `variables`. |
 
 ## Examples
 
@@ -224,6 +226,8 @@ Card rendering will be delayed until all asynchronous functions (in all template
 When defining `staticVariables` that reference other (previously defined) `svars`, any referenced `svars` that use asynchronous functions will contain the unsettled `Promise` object.
 
 Similarly, when defining `variables` that reference other (previously defined) `vars`, any referenced `vars` that use asynchronous functions will contain the unsettled `Promise` object. However, any referenced `svars` that use asynchronous functions will contain complete/settled values.
+
+Also similarly, when evaluating the `card`, `row`, or `element` configuration, any `output` values that use asynchronous functions will contain the unsettled `Promise` object.  However, any referenced `svars` or `vars` that use asynchronous functions will contain complete/settled values.
 
 When defining `entities` that use templates, any `entities` templates that use asynchronous functions will be skipped, and any referenced `vars` that use asynchronous functions will contain the unsettled `Promise` object, which will not settle before `entities` is used. However, any referenced `svars` that use asynchronous functions will have complete/settled values.
 

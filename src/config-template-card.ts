@@ -119,7 +119,7 @@ export class ConfigTemplateCard extends LitElement {
       const element = this.shadowRoot.querySelector('#card > *') as LovelaceCard | null;
       if (element) {
         Promise.resolve(computeCardSize(element)).then((size) => {
-          console.log('computeCardSize is ' + String(size));
+          console.log('config-template-card computeCardSize is ' + String(size));
         }, () => undefined);
         return computeCardSize(element);
       }
@@ -166,19 +166,23 @@ export class ConfigTemplateCard extends LitElement {
       const varMgr = this._evaluateVars(false);
       // Cache the evaluated variables to avoid requiring render() to evaluate them again
       this._tmpVarMgr = varMgr;
-      const entities = this._evaluateStructure(varMgr, this._config.entities, 'immediate');
-      for (const entity of entities) {
-        if (isPromise(entity)) {
-          console.warn("Ignoring asynchronous function in 'entities'. Asynchronous functions are not permitted in config-template-card 'entities'.");
-          continue;
+      const entities = this._evaluateStructureSimple(varMgr, this._config.entities, false);
+      if (entities instanceof Array) {
+        for (const entity of entities) {
+          if (isPromise(entity)) {
+            console.warn("Ignoring asynchronous function in config-template-card 'entities'. Asynchronous functions are not permitted in 'entities'.");
+            continue;
+          }
+          if (!isString(entity)) {
+            console.warn("Ignoring non-string value in config-template-card 'entities'. Only string values are permitted in 'entities'.");
+            continue;
+          }
+          if (oldHass.states[entity] !== this.hass.states[entity]) {
+            return true;
+          }
         }
-        if (!isString(entity)) {
-          console.warn("Ignoring non-string value in 'entities'. Only string values are permitted in config-template-card 'entities'.");
-          continue;
-        }
-        if (oldHass.states[entity] !== this.hass.states[entity]) {
-          return true;
-        }
+      } else {
+        console.error("config-template-card 'entities' must be an array or a template that returns an array");
       }
       return false;
     }
@@ -202,8 +206,16 @@ export class ConfigTemplateCard extends LitElement {
 
     if (varMgr._varsPromise) { await varMgr._varsPromise; }
 
-    let configSection = (this._config.card ?? this._config.row ?? this._config.element);
-    configSection = await this._evaluateStructure(varMgr, configSection);
+    let configSection: ObjMap | undefined
+      = (this._config.card ?? this._config.row ?? this._config.element);
+    const csPromises = [];
+    this._evaluateStructure(varMgr, configSection, ((r) => { varMgr.output = r; }), csPromises);
+    if (csPromises.length > 0) { await Promise.all(csPromises); }
+    configSection = varMgr.output;
+    if (typeof configSection !== 'object') {
+      console.error('config-template-card card/row/element must be an object');
+      return html``;
+    }
 
     const element = this._config.card
       ? this._helpers.createCardElement(configSection)
@@ -215,13 +227,13 @@ export class ConfigTemplateCard extends LitElement {
     if (this._config.element) {
       if (this._config.style) {
         let style = this._config.style;
-        style = await this._evaluateStructure(varMgr, style);
+        style = await this._evaluateStructureSimple(varMgr, style);
         Object.keys(style).forEach((prop) => {
           this.style.setProperty(prop, style[prop]);
         });
       }
-      if (configSection?.style) {
-        Object.keys(configSection.style).forEach((prop) => {
+      if ('style' in configSection && typeof configSection.style === 'object') {
+        Object.keys(configSection.style as object).forEach((prop) => {
           assertNotNull(configSection.style);  // TypeScript can't detect the enclosing if()
           element.style.setProperty(prop, configSection.style[prop]);
         });
@@ -267,143 +279,129 @@ export class ConfigTemplateCard extends LitElement {
     }
 
     const varMgr: VarMgr = {
-      hass: this.hass, states: this.hass.states, user: this.hass.user,
+      hass: this.hass, states: this.hass.states, user: this.hass.user, config: this._config,
       svars: this._svarMgr?.svars ?? [], _evalInitSVars: this._svarMgr?._evalInitSVars ?? '',
-      vars: [], _evalInitVars: '',
+      vars: (doStatic ? undefined : []), _evalInitVars: '',
+      output: undefined,
     };
-    const immediateVars: Vars = (doStatic ? varMgr.svars : varMgr.vars);
+    const vars: Vars = (doStatic ? varMgr.svars : (varMgr.vars as Vars));
+    const promises: Promise<any>[] = [];
     const initKey = (doStatic ? '_evalInitSVars' : '_evalInitVars');
     const initRef = (doStatic ? 'svars' : 'vars');
 
-    const arrayVars2: any[] = [];
-    for (let v of arrayVars) {
+    arrayVars.forEach((v, i) => {
       if (isString(v)) {
-        v = this._evaluateTemplate(varMgr, v, true);
-        immediateVars.push(v);
-        arrayVars2.push(v);
+        let out = this._evaluateTemplate(varMgr, v, true);
+        if (isPromise(out)) {
+          out = out.then((r) => { vars[i] = r; });
+          promises.push(out as Promise<any>);
+        }
+        vars[i] = out;
       } else {
-        v = this._evaluateStructure(varMgr, v, 'both');
-        immediateVars.push(v.immediate);
-        arrayVars2.push(v.promise);
+        this._evaluateStructure(varMgr, v, ((r) => { vars[i] = r; }), promises);
       }
-    }
-    const namedVars2: ObjMap = {};
-    for (const varName in namedVars) {
-      let v = namedVars[varName];
+    });
+    Object.entries(namedVars).forEach(([k, v], _i) => {
       if (isString(v)) {
-        v = this._evaluateTemplate(varMgr, v, true);
-        immediateVars[varName] = v;
-        namedVars2[varName] = v;
-      }
-      else {
-        v = this._evaluateStructure(varMgr, v, 'both');
-        immediateVars[varName] = v.immediate;
-        namedVars2[varName] = v.promise;
+        let out = this._evaluateTemplate(varMgr, v, true);
+        if (isPromise(out)) {
+          out = out.then((r) => { vars[k] = r; });
+          promises.push(out as Promise<any>);
+        }
+        vars[k] = out;
+      } else {
+        this._evaluateStructure(varMgr, v, ((r) => { vars[k] = r; }), promises);
       }
       // Note that if `staticVariables` and `variables` both contain a variable with the same name
       // then `_evalInitSVars + _evalInitVars` will end up defining the variable twice.  This
       // shouldn't be a problem, since the second definition will simply override the first.
       // However, if browsers/JavaScript are changed so that re-defining a variable causes a warning
       // or error then we may need to explicitly remove duplicates from `_evalInitSVars`.
-      varMgr[initKey] += `var ${varName} = ${initRef}['${varName}'];\n`;
-    }
-
-    let promiseArrayVars: Promise<any[]> | undefined;
-    if (somePromise(arrayVars2)) {
-      promiseArrayVars = Promise.all(arrayVars2.map((v) => Promise.resolve(v)));
-    }
-    let promiseNamedVars: Promise<ObjMap> | undefined;
-    if (somePromise(Object.entries(namedVars2).map(([_k, v], _i) => v))) {
-      promiseNamedVars = Promise.all(Object.entries(namedVars2).map(([k, v], _i) =>
-        Promise.resolve(v).then((v) => [k, v])
-      )).then((a) => Object.fromEntries(a));
-    }
-    let promise: Promise<any> | undefined;
-    if (isPromise(promiseArrayVars) || isPromise(promiseNamedVars)) {
-      promise = Promise.all([promiseArrayVars, promiseNamedVars].map((v) => Promise.resolve(v)))
-      .then(([pav, pnv]) => Object.assign(pav as any[], pnv as ObjMap));
-    }
+      varMgr[initKey] += `var ${k} = ${initRef}['${k}'];\n`;
+    });
 
     if (doStatic) {
       const svarMgr: SVarMgr = {
-        svars: immediateVars, _evalInitSVars: varMgr._evalInitSVars,
+        svars: vars, _evalInitSVars: varMgr._evalInitSVars,
       };
-      if (promise) {
-        svarMgr._svarsPromise = promise.then((v) => {
-          svarMgr.svars = v;
+      if (promises.length > 0) {
+        svarMgr._svarsPromise = Promise.all(promises).then((_a) => {
           svarMgr._svarsPromise = undefined;
-          return v;
         });
       }
       return svarMgr;
     } else {
-      if (promise) {
-        varMgr._varsPromise = promise.then((v) => {
-          varMgr.vars = v;
+      if (promises.length > 0) {
+        varMgr._varsPromise = Promise.all(promises).then((_a) => {
           varMgr._varsPromise = undefined;
-          return v;
         });
       }
       return varMgr;
     }
   }
 
-  // Return value is based on `mode`:
-  // * 'promise' will return either a Promise (that will settle when all Promises returned by
-  //   templates have settled), or a non-Promise (if no nested templates return a Promise).
-  // * 'immediate' will return a non-Promise, potentially with nested Promise values.
-  // * 'both' will return both of the above as `{ promise: p, immediate: i }`.
-  private _evaluateStructure(varMgr: VarMgr, struct: any, mode = 'promise'): any {
-    let ret;
+  // If `promise` is `true` (the default) then this returns either the complete evaluated structure,
+  // or a Promise that will settle with the complete evaluated structure when all Promises returned
+  // by all nested templates have settled.
+  //
+  // If `promise` is `false` then this returns the complete evaluated structure with any Promises
+  // returned by templates stored in that structure.  This is intended to support cases where
+  // Promises are not supported and will be ignored by the caller.
+  //
+  private _evaluateStructureSimple(varMgr: VarMgr, struct: any, promise = true): any {
+    let ret; const promises = [];
+    this._evaluateStructure(varMgr, struct, ((r) => { ret = r; }), promises);
+    if (promise && promises.length > 0) {
+      return Promise.all(promises).then((_a) => ret);
+    }
+    return ret;
+  }
 
+  // To facilitate both access to the incomplete structure as it is being built and efficient
+  // aggregation of Promises, this function does not return any values and instead provides output
+  // via `immediateAssign` and `promises`.
+  //
+  // The `immediateAssign` callback will be called with the new top-level object as soon as it is
+  // created (before it is populated). That object will then be populated depth-first. Any Promises
+  // returned by templates will be stored nested within that object, and will replace themselves
+  // with the settled value as soon as they settle.  If the top-level object is a template that
+  // returns a Promise then `immediateAssign` will be called a second time when the Promise settles.
+  //
+  // `promises` must be an array, which will have all nested Promises added to it before this
+  // function returns.  The caller may then `await Promise.all(promises)` to wait for all Promises
+  // to settle.
+  //
+  private _evaluateStructure(
+    varMgr: VarMgr, struct: any,
+    immediateAssign: ((ret: any) => void), promises: Promise<any>[],
+  ): any {
     if (struct instanceof Array) {
-      ret = struct.map((v, _i) =>
-        this._evaluateStructure(varMgr, v, mode)
-      );
-      if (mode != 'immediate') {
-        let promiseTmp: any[], immediate: any[] = [], promise: any[] | Promise<any[]>;
-        if (mode == 'both') { immediate = ret.map((v) => v.immediate); }
-        promise = promiseTmp = (mode == 'both' ? ret.map((v) => v.promise) : ret);
-        if (somePromise(promiseTmp)) {
-          promise = Promise.all(promiseTmp.map((v) => Promise.resolve(v)));
-        }
-        ret = (mode == 'both' ? { promise: promise, immediate: immediate } : promise);
-      }
+      const out: any[] = [];
+      immediateAssign(out);
+      struct.forEach((v, i) => {
+        this._evaluateStructure(varMgr, v, ((r) => { out[i] = r; }), promises);
+      });
 
     } else if (typeof struct === 'object') {
-      const tmp = Object.entries(struct as ObjMap).map(([k, v], _i) =>
-        [k, this._evaluateStructure(varMgr, v, mode)]
-      );
-      let immediateTmp: any[], promiseTmp: any[];
-      let immediate: ObjMap = {}, promise: ObjMap | Promise<ObjMap> = {};
-      if (mode != 'promise') {
-        immediateTmp = (mode == 'both' ? tmp.map(([k, v], _i) => [k, v.immediate]) : tmp);
-        immediate = Object.fromEntries(immediateTmp);
-        ret = immediate;
-      }
-      if (mode != 'immediate') {
-        promiseTmp = (mode == 'both' ? tmp.map(([k, v], _i) => [k, v.promise]) : tmp);
-        if (somePromise(promiseTmp.map(([_k, v], _i) => v))) {
-          promise = Promise.all(promiseTmp.map(([k, v], _i) =>
-            Promise.resolve(v).then((v) => [k, v])
-          )).then((a) => Object.fromEntries(a));
-        } else {
-          promise = Object.fromEntries(promiseTmp);
-        }
-        ret = promise;
-      }
-      if (mode == 'both') { ret = { promise: promise, immediate: immediate }; }
+      const out: ObjMap = {};
+      immediateAssign(out);
+      Object.entries(struct as ObjMap).forEach(([k, v], _i) => {
+        this._evaluateStructure(varMgr, v, ((r) => { out[k] = r; }), promises);
+      });
 
     } else if (isString(struct)) {
-      ret = this._evaluateTemplate(varMgr, struct);
-      if (mode == 'both') { ret = { promise: ret, immediate: ret }; }
+      let out = this._evaluateTemplate(varMgr, struct);
+      if (isPromise(out)) {
+        out = out.then((r) => { immediateAssign(r); });
+        promises.push(out as Promise<any>);
+      }
+      immediateAssign(out);
 
     } else {
-      ret = structuredClone(struct);
-      if (mode == 'both') { ret = { promise: ret, immediate: ret }; };
-    }
+      const out = structuredClone(struct);
+      immediateAssign(out);
 
-    return ret;
+    }
   }
 
   private _evaluateTemplate(varMgr: VarMgr, template: string, withoutDelim = false): any {
@@ -448,8 +446,10 @@ export class ConfigTemplateCard extends LitElement {
     'var hass = globalThis._varMgr.hass;\n' +
     'var states = globalThis._varMgr.states;\n' +
     'var user = globalThis._varMgr.user;\n' +
+    'var config = globalThis._varMgr.config;\n' +
     'var svars = globalThis._varMgr.svars;\n' +
     'var vars = globalThis._varMgr.vars;\n' +
+    'var output = globalThis._varMgr.output;\n' +
   '');
 
   private _evalWithVars(varMgr: VarMgr, template: string, exceptRet: any = null): any {
@@ -488,13 +488,13 @@ export class ConfigTemplateCard extends LitElement {
 
       if (isPromise(ret)) {
         return ret.catch((e: unknown) => {
-          console.error('Template error:', e);
+          console.error('config-template-card template error:', e);
           return exceptRet;
         });
       }
       return ret;
     } catch(e) {
-      console.error('Template error:', e);
+      console.error('config-template-card template error:', e);
       return exceptRet;
     } finally {
       if (origVarMgr) { globalThis._varMgr = origVarMgr; } else { delete globalThis._varMgr; }
