@@ -23,7 +23,7 @@ This [Home Assistant](https://www.home-assistant.io/) [Lovelace Dashboard](https
 
 Note that this Card uses **Javascript** templates. It does NOT support the **Jinja2** templates that are used elsewhere in Home Assistant.
 
-This is because Dashboard Cards are normally rendered entirely in the web browser using Javascript, while Jinja2 templates must be rendered by Python on the Home Assistant server. The use of Javascript for templates enables this Card to render templates in the browser without deviating from the expected design pattern of Dashboard Cards.
+This is because Dashboard Cards are normally rendered entirely in the web browser using Javascript, while Jinja2 templates must be rendered by Python on the Home Assistant server. The use of Javascript for templates enables this Card to render templates entirely in the browser without deviating from the expected design pattern of Dashboard Cards.
 
 For an alternative Card that does support Jinja2 templates, see [lovelace-card-templater](https://github.com/gadgetchnnel/lovelace-card-templater). That Card works by making API calls from the browser to the Home Assistant server to render each template.
 
@@ -49,30 +49,63 @@ resources:
 
 ## Configuration
 
+(If you are new to config-template-card, you may want to skim the [Examples](#Examples) first, then return to this section for more details.)
+
+config-template-card must be configured using YAML, either in the UI code editor or in a [YAML dashboard](https://www.home-assistant.io/dashboards/dashboards/#adding-more-dashboards-with-yaml).  The following YAML options are available.
+
 | Name            | Type        | Requirement  | Description                                       |
 | --------------- | ----------- | ------------ | ------------------------------------------------- |
 | type            | string      | **Required** | Must be `custom:config-template-card`             |
-| entities        | list        | **Optional** | List of entity strings that should be watched for updates. Templates can be used here. |
-| staticVariables | list/object | **Optional** | List of variables, which can be templates, that can be used in other templates and indexed using `svars` or by name. These are evaluated only on the first update/render and are preserved without re-evaluation for subsequent updates. |
-| variables       | list/object | **Optional** | List of variables, which can be templates, that can be used in other templates and indexed using `vars` or by name. These are evaluated on each update/render. |
-| card            | object      | **Optional** | Card configuration.                               |
-| row             | object      | **Optional** | Row configuration.                                |
-| element         | object      | **Optional** | Element configuration.                            |
-| style           | object      | **Optional** | Element Style configuration. Can only be used with `element`.    |
+| entities        | list        | **Optional** | List of entity strings that should be watched for updates. If not specified then templates will not be re-evaluated when entities are updated. |
+| staticVariables | list/object | **Optional** | List of variables which can be used in templates and indexed using `svars` or by name. These are evaluated only on the first update/render and are preserved without re-evaluation for subsequent updates. |
+| variables       | list/object | **Optional** | List of variables which that can be used in templates and indexed using `vars` or by name. These are evaluated on each update/render. |
+| card            | object      | **Optional** | Nested Card configuration.                        |
+| row             | object      | **Optional** | Nested Row configuration.                         |
+| element         | object      | **Optional** | Nested Element configuration.                     |
+| style           | object      | **Optional** | Nested Element Style configuration. Can only be used with `element`. |
 
 Exactly one of `card`, `row`, or `element` is required.
 
-### Note: All templates must be enclosed by `${}`, except when defining variables.
+### Templates
 
-`${}` is optional in variable definitions (variables will be parsed as templates even without `${}`).
+Values used or nested anywhere in the above YAML options may contain Javascript templates surrounded by `<$` and `$>` delimiters.
 
-Config values that begin with `${` and end with `}` are parsed as a single template, including any nested `${` and `}` sequences/characters.  For example, `${vars[0]}-${vars[1]}` will attempt to evaluate `vars[0]}-${vars[1]` and will fail due to the invalid `}` and `${`.
+If a YAML value consists of a single template with no surrounding text, then the template Javascript may return a string, number, array, or object (all values in the array or object must also be one of those types, and all object keys must be strings or numbers), and the returned value will be inserted directly into the generated data structure.
 
-Config values that do not begin with `${` and end with `}` may contain multiple templates, however those templates cannot contain `}` characters.  For example, `${vars[0]}-${vars[1]}:` will work as expected, but `${() => { return 0; }}:` will fail due to the `}` character in the template.
+If a YAML value contains multiple templates or has surrounding text, then the return value of the template Javascript will be converted to a string and substituted into the YAML value.
 
-Values that begin with `$! ` (`$!` followed by a space) will not be parsed for templates.  `$! ` will be stripped from the beginning of the value, but any `${}` sequences within the value will be left as-is.
+Templates cannot be used in keys of nested objects in YAML, however a template may be used to generate a nested object with dynamic keys.
 
-### Available variables for templating
+YAML values that begin with `$! ` (`$!` followed by a space) will not be parsed for templates.  `$! ` will be removed from the beginning of the value in the generated data structure, but any `<$ ... $>` sequences within the value will be left as-is.
+
+For backward compatibility with earlier versions of config-template-card, top-level (not nested) values in `staticVariables` and `variables` which do not begin with `$! ` and do not include any `<$ ... $>` sequences will be evaluated as if the entire value were a template. (All other YAML values are evaluated only if they include a `<$ ... $>` sequence.) Use `$! ` to disable this behavior. Reliance on this behavior is discouraged, and this behavior may be removed in a future version, so `<$ ... $>` should be used in any variable value that should be evaluated as a template.
+
+Also for backward compatibility, `${` and `}` delimiters may be used instead of `<$` and `$>` in a YAML value that consists of a single template with no surrounding text. Reliance on this behavior is also discouraged, and this behavior may be removed in a future version, so `${` and `}` should be replaced with `<$` and '$>` in old configs.
+
+### YAML Interactions
+
+Templates are parsed as YAML strings before being evaluated as Javascript code.
+
+See [YAML Multiline Strings](https://yaml-multiline.info/) for details on YAML string parsing.
+
+To minimize the likelihood of unexpected parsing behavior or interactions, the following conventions are recommended for all YAML values that contain templates or complex strings:
+
+* For single-line values that do not contain any `'` (single quote) characters, surround the value with single quotes.
+* For multi-line values, or single-line values that contain any `'` (single quote) characters, use "literal block style" (`key: |-`).
+
+Note that YAML parses unquoted numbers as numbers, but parses numbers in quotes or "block style" as strings.  This distinction may be important in some cases.
+
+Reasoning:
+
+* "Plain" (unquoted) YAML strings should be avoided due to special YAML handling of some character sequences like `: ` (colon space) that might be used in templates or complex strings.
+* Double-quoted YAML strings should be avoided due to YAML parsing of escape sequences like `\n` (newline) that might be used in templates.
+* Single-quoted YAML strings should be avoided for values that contain any `'` (single quote) characters to avoid hard-to-read escape sequences for those characters.
+* "Folded block style" (`key: >-`) should be avoided because the removal of interspersed newline characters could potentially change the semantics of some Javascript code in templates.
+* Any block style chomping indicator (`-`, `+`, or none) may be used, however since templates and strings for config-template-card are unlikely to be affected by or have any use for trailing newlines, they should be stripped by default (using `-`).
+
+### Template variables
+
+The following Javascript variables may be used in templates.
 
 | Variable    | Description                                                                        |
 | ----------- | ---------------------------------------------------------------------------------- |
@@ -83,6 +116,8 @@ Values that begin with `$! ` (`$!` followed by a space) will not be parsed for t
 | `svars`     | Defined by `staticVariables` configuration and accessible in your templates to avoid redundant expensive operations. If `staticVariables` in the configuration is a yaml list, then `svars` is an array starting with index 0. If `staticVariables` in the configuration is an object, then `svars` is a string-indexed map and you can also access the variables by name without using `svars` at all. |
 | `vars`      | Defined by `variables` configuration and accessible in your templates to help clean them up. If `variables` in the configuration is a yaml list, then `vars` is an array starting with index 0. If `variables` in the configuration is an object, then `vars` is a string-indexed map and you can also access the variables by name without using `vars` at all. |
 | `output`    | While evaluating the `card`, `row`, or `element` configuration, `output` contains the partially assembled/evaluated copy of that config section. This may be used, for example, to reference a nested card's `type` or `entities` in a template for that card's `name` without requiring the referenced values to be defined in `variables`. |
+
+Templates may define additional Javascript variables, but they will be local to the template.
 
 ## Examples
 

@@ -405,20 +405,27 @@ export class ConfigTemplateCard extends LitElement {
   }
 
   private _evaluateTemplate(varMgr: VarMgr, template: string, withoutDelim = false): any {
+    // Disable template evaluation if `$! ` prefix is present.
     if (template.startsWith('$! ')) {
       return template.substring(3, template.length);
     }
 
+    // Old (deprecated) `${...}` template syntax.
     if (template.startsWith('${') && template.endsWith('}')) {
-      // The entire property is a template, return eval's result directly
-      // to preserve types other than string (eg. numbers)
+      // Entire value is a template, partial or multiple template values are not supported.
+      // Return eval result directly to preserve types other than string (eg. numbers).
       return this._evalWithVars(varMgr, template.substring(2, template.length - 1));
     }
 
-    const matches = template.match(/\${[^}]+}/g);
+    // New `<$...$>` template syntax.
+    const matches = template.match(/<\$.*?\$>/g);
     if (matches) {
+      if (matches.length == 1 && matches[0].length == template.length) {
+        // Return eval result directly to preserve types other than string (eg. numbers).
+        return this._evalWithVars(varMgr, template.substring(2, template.length - 2));
+      }
       const repls = matches.map((m, _i) => {
-        return [m, this._evalWithVars(varMgr, m.substring(2, m.length - 1), '<error>')]
+        return [m, this._evalWithVars(varMgr, m.substring(2, m.length - 2), '<error>')]
       });
       if (somePromise(repls.map(([_m, r], _i) => r))) {
         return Promise.all(repls.map(([m, p]) =>
