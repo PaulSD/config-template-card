@@ -62,6 +62,16 @@ resources:
 
 Exactly one of `card`, `row`, or `element` is required.
 
+### Note: All templates must be enclosed by `${}`, except when defining variables.
+
+`${}` is optional in variable definitions (variables will be parsed as templates even without `${}`).
+
+Config values that begin with `${` and end with `}` are parsed as a single template, including any nested `${` and `}` sequences/characters.  For example, `${vars[0]}-${vars[1]}` will attempt to evaluate `vars[0]}-${vars[1]` and will fail due to the invalid `}` and `${`.
+
+Config values that do not begin with `${` and end with `}` may contain multiple templates, however those templates cannot contain `}` characters.  For example, `${vars[0]}-${vars[1]}:` will work as expected, but `${() => { return 0; }}:` will fail due to the `}` character in the template.
+
+Values that begin with `$! ` (`$!` followed by a space) will not be parsed for templates.  `$! ` will be stripped from the beginning of the value, but any `${}` sequences within the value will be left as-is.
+
 ### Available variables for templating
 
 | Variable    | Description                                                                        |
@@ -251,16 +261,6 @@ views:
 Both arrays and objects are supported, just like in card's local variables. It is allowed to mix the two types, i.e. use an array in dashboard variables and an object in card variables, or the other way around. If both definitions are arrays, then dashboard variables are put first in `svars`/`vars`. In the mixed mode, `svars`/`vars` have array indices as well as variable names.
 
 After making changes to these variable definitions in the HA Dashboard Editor, you must reload the browser on any currently-open clients before you will see the changes.  Unlike card config changes which automatically update currently-open clients, dashboard wide variable config changes will not automatically update currently-open clients.
-
-### Note: All templates must be enclosed by `${}`, except when defining variables.
-
-`${}` is optional in variable definitions (variables will be parsed as templates even without `${}`).
-
-Config values that begin with `${` and end with `}` are parsed as a single template, including any nested `${` and `}` sequences/characters.  For example, `${vars[0]}-${vars[1]}` will attempt to evaluate `vars[0]}-${vars[1]` and will fail due to the invalid `}` and `${`.
-
-Config values that do not begin with `${` and end with `}` may contain multiple templates, however those templates cannot contain `}` characters.  For example, `${vars[0]}-${vars[1]}:` will work as expected, but `${() => { return 0; }}:` will fail due to the `}` character in the template.
-
-Values that begin with `$! ` (`$!` followed by a space) will not be parsed for templates.  `$! ` will be stripped from the beginning of the value, but any `${}` sequences within the value will be left as-is.
 
 ## Troubleshooting
 
