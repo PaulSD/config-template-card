@@ -41,12 +41,6 @@ Hey dude! Help me out for a couple of :beers: or a :coffee:!
 
 Use [HACS](https://hacs.xyz) or follow this [guide](https://github.com/thomasloven/hass-config/wiki/Lovelace-Plugins)
 
-```yaml
-resources:
-  - url: /local/config-template-card.js
-    type: module
-```
-
 ## Configuration
 
 (If you are new to config-template-card, you may want to skim the [Examples](#Examples) first, then return to this section for more details.)
@@ -121,33 +115,47 @@ Templates may define additional Javascript variables, but they will be local to 
 
 ## Examples
 
+### General example
+
 ```yaml
-type: 'custom:config-template-card'
+type: custom:config-template-card
 variables:
-  LIGHT_STATE: states['light.bed_light'].state
-  GARAGE_STATE: states['cover.garage_door'].state
+  LIGHT_ENTITY: '$! light.bed_light'
+  LIGHT_STATE: '<$ states[LIGHT_ENTITY].state $>'
+  GARAGE_STATE: '<$ states["cover.garage_door"].state $>'
 entities:
-  - light.bed_light
+  - '<$ LIGHT_ENTITY $>'
   - cover.garage_door
   - alarm_control_panel.alarm
   - climate.ecobee
 card:
-  type: "${LIGHT_STATE === 'on' ? 'glance' : 'entities'}"
+  type: '<$ LIGHT_STATE === "on" ? "glance" : "entities" $>'
   entities:
-    - entity: alarm_control_panel.alarm
-      name: "${GARAGE_STATE === 'open' && states['alarm_control_panel.alarm'].state === 'armed_home' ? 'Close the garage!' : ''}"
-    - entity: binary_sensor.basement_floor_wet
-    - entity: climate.ecobee
-      name: "${states['climate.ecobee'].attributes.current_temperature > 22 ? 'Cozy' : 'Too Hot/Cold'}"
+    - entity: '<$ LIGHT_STATE === "on" ? LIGHT_ENTITY : "climate.ecobee" $>'
+      icon: |-
+        <$ GARAGE_STATE === 'open' ? 'mdi:hotel' : '' $>
     - entity: cover.garage_door
-    - entity: "${LIGHT_STATE === 'on' ? 'light.bed_light' : 'climate.ecobee'}"
-      icon: "${GARAGE_STATE === 'open' ? 'mdi:hotel' : '' }"
+    - entity: alarm_control_panel.alarm
+      name: |-
+        <$
+        (function() {
+          if (GARAGE_STATE === 'open' && states['alarm_control_panel.alarm'].state === 'armed_home') {
+            return 'Close the garage!';
+          }
+          return '';
+        })();
+        $>
+    - entity: climate.ecobee
+      name: '<$ states["climate.ecobee"].attributes.current_temperature > 22 ? "Cozy" : "Too Hot/Cold" $>'
 ```
+
+Notes:
+TODO
 
 ### Templated entities example
 
 ```yaml
-type: 'custom:config-template-card'
+type: custom:config-template-card
 variables:
   - states['sensor.light']
 entities:
@@ -164,7 +172,7 @@ card:
 type: picture-elements
 image: http://hs.sbcounty.gov/CN/Photo%20Gallery/_t/Sample%20Picture%20-%20Koala_jpg.jpg?Mobile=0
 elements:
-  - type: 'custom:config-template-card'
+  - type: custom:config-template-card
     variables:
       - states['light.bed_light'].state
     entities:
@@ -187,7 +195,7 @@ The `style` object on the element configuration is applied to the element itself
 ```yaml
 type: entities
 entities:
-  - type: 'custom:config-template-card'
+  - type: custom:config-template-card
     variables:
       - states['light.bed_light'].state
     entities:
@@ -226,7 +234,7 @@ variables:
 If you find yourself having to rewrite the same logic in multiple locations, you can define methods inside Config Template Card's variables, which can be called anywhere within the scope of the card:
 
 ```yaml
-type: 'custom:config-template-card'
+type: custom:config-template-card
 variables:
   setTempMessage: |
     (prefix, temp) => {
@@ -253,7 +261,7 @@ card:
 Asynchronous functions can be used in most templates.
 
 ```yaml
-type: 'custom:config-template-card'
+type: custom:config-template-card
 entities:
   - light.bed_light
   - light.porch_light
